@@ -41,6 +41,10 @@ type_iio = mk_type(type_o, [type_i, type_i])
 type_iio_o = mk_type(type_o, [type_iio])
 ```
 
+```elixir
+type_ooo
+```
+
 ## Constants
 
 $\neg_{oo}, \lor_{ooo}, \land_{ooo}, \supset_{ooo}, \equiv_{ooo}, =_{o\alpha\alpha}, \Pi_{o(o\alpha)}, \Sigma_{o(o\alpha)}$
@@ -82,6 +86,45 @@ defmodule Util do
   @type_o {:type, :o, []}
   @neg_const {:decl, :co, "¬", {:type, :o, [{:type, :o, []}]}}
   @neg_term neg_term
+  
+  def curry_type(t) do
+    case t do
+      :i -> :i
+      :o -> :o
+      {:type, ret, []} -> {:type, ret, []}
+      {:type, ret, [arg | []]} -> {:type, ret, [arg]}
+      {:type, ret, [arg | rest]} -> {:type, curry_type({:type, ret, rest}), [arg]}
+    end
+  end
+
+  def curry_term(t) do
+    # {:term, [bvars], head, [args], type, [fvars], max_num}
+    case t do
+      # no argument
+      {:term, _, _, [], _, _, _} -> t
+      # single argument
+      {:term, _, _, [_], _, _, _} -> t
+      # multiple arguments
+      {:term, bvars, head, [arg1 | rest], type, _fvars, max_num} ->
+        inner_type = case type do
+          {:type, ret, [_]} -> ret
+          {:type, ret, [_ | remaining]} -> {:type, ret, remaining}
+        end
+        inner_fvars = (get_fvars(head) ++ get_fvars(arg1)) |> Enum.uniq()
+        inner_max_num = max(max_num, get_max_num(arg1))
+        inner_term = {:term, bvars, head, [arg1], inner_type, inner_fvars, inner_max_num}
+
+        rest_fvars = Enum.reduce(rest, inner_fvars, fn arg, acc_fvars ->
+          (acc_fvars ++ get_fvars(arg)) |> Enum.uniq()
+        end)
+
+        rest_max_num = Enum.reduce(rest, inner_max_num, fn arg, acc_max ->
+          max(acc_max, get_max_num(arg))
+        end)
+
+        curry_term({:term, [], inner_term, rest, curry_type(type), rest_fvars, rest_max_num})
+    end
+  end
   
   def mk_pi_const(type), do: mk_const("Π", mk_type(@type_o, [type]))
 
@@ -150,10 +193,228 @@ defmodule Util do
     MapSet.new(literals, fn f -> apply_subst(substitutions, f) end)
   end
 
-  # TODO: remove double negation
   def apply_subst(substitutions, term) do
     subst(substitutions, term)
   end
+end
+```
+
+## Computability Path Ordering (CPO)
+
+Sorts $\mathcal{S} = \{\iota, o\}$. Type ordering $\succ$ on types:
+
+* By choice, $\iota \succ o$
+* $\beta\alpha \succ \beta$
+* $\beta_1\alpha \succ \beta_2\alpha$ if $\beta_1 \succ \beta_2$
+* $\beta_1\alpha \succ \gamma$ if $\beta_1 \succ \gamma$ and $\gamma \ne \beta_2\alpha$
+
+```elixir
+defmodule TypeOrdering do
+  import Util
+
+  def type_geq(t1, t2), do: t1 == t2 || type_gt(t1, t2)
+  
+  def type_gt(t1, t2) do
+    case {curry_type(t1), curry_type(t2)} do
+      # i > o
+      {{:type, :i, []}, {:type, :o, []}} -> true
+
+      # (a->b) > b
+      {{:type, b, [_a]}, b} -> true
+
+      # (a->b) > a
+      {{:type, _b, [a]}, a} -> true
+
+      # (a->b1) > (a->b2) if b1 > b2
+      {{:type, b1, [a]}, {:type, b2, [a]}} -> type_geq(b1, b2)
+
+      # (a->b) > c if b >= c
+      {{:type, b, [_a]}, c} -> type_geq(b, c)
+
+      _ -> false
+    end
+  end
+  
+end
+```
+
+```elixir
+defmodule CPO do
+  import Util
+  import TypeOrdering
+
+  # Our HOL signature symbols corespond to big symbols Fb in CPO paper
+  @signature_symbols ["¬", "∨", "∧", "⊃", "≡", "Π", "Σ", "="]
+  # Simpler signature symbols are considered smaller than bigger terms
+  @precedence %{
+    "¬" => 1,
+    "∧" => 2,
+    "∨" => 2,
+    "⊃" => 2,
+    "≡" => 2,
+    "Π" => 3,
+    "Σ" => 3,
+    "=" => 4
+  }
+  # Symbols from Fb can be multiset :mul or lexicographic {:lex, n}
+  @status %{
+    "¬" => :mul,
+    "∧" => :mul,
+    "∨" => :mul,
+    "⊃" => {:lex, 2},
+    "≡" => :mul,
+    "Π" => :mul,
+    "Σ" => :mul,
+    "=" => :mul
+  }
+  
+  def term_geq(t1, t2, bound \\ MapSet.new())
+
+  # reflexivity
+  def term_geq(t1, t2, bound), do:
+    t1 == t2 || term_gt(t1, t2, bound)
+
+  def term_gt(t1, t2, bound \\ MapSet.new())
+
+  def term_gt(t1, t2, bound) do
+    # reflexivity
+    if t1 == t2, do: true
+    # {:term, [bvars], head, [args], type, [fvars], max_num}
+    case curry_term(t1) do
+      {:term, [], f, t, _, _, _} when f in @signature_symbols ->
+        # Case (Fb▷)
+        if Enum.any?(t, &(term_and_type_geq(&1, t2, MapSet.new()))) do
+          true
+        else
+          case curry_term(t2) do
+            {:term, [], g, u, _, _, _} when g in @signature_symbols ->
+              cond do
+                # Case (Fb=)
+                @precedence[f] == @precedence[g] &&
+                Enum.all?(u, &(term_gt(t1, &1, bound))) &&
+                args_gt_by_status(t, u, f) ->
+                  true
+
+                # Case (Fb>)
+                @precedence[f] > @precedence[g] &&
+                Enum.all?(u, &(term_gt(t1, &1, bound))) ->
+                  true
+
+                true -> false
+              end
+
+            # Case (Fb@)
+            {:term, [], u, [v], _, _, _} ->
+              term_gt(t1, u, bound) && term_gt(t1, v, bound)
+
+            # Case (Fbλ)
+            {:term, [{:decl, :bv, _, type} | _], _, _, _, _, _} ->
+              z = mk_new_free_var(type) |> mk_term()
+              # β-reduction handles substitution
+              term_gt(t1, mk_appl_term(t2, z), MapSet.put(bound, z))
+
+            # Case (FbX)
+            y -> MapSet.member?(bound, y)
+          end
+        end
+
+      {:term, [], t, [u], _, _, _} ->
+        # Case (@▷)
+        if term_geq(t, t2, bound) || term_and_type_geq(u, t2, bound) do
+          true
+        else
+          case t2 do
+            # Case (@=)
+            {:term, [], v, [w], _, _, _} ->
+              (t == v && term_gt(u, w, bound)) ||
+              (application_gt(t1, v, bound) && application_gt(t1, w, bound))
+
+            # Case (@λ)
+            {:term, [{:decl, :bv, _, type} | _], _, _, _, _, _} ->
+              z = mk_new_free_var(type) |> mk_term()
+              # β-reduction handles substitution
+              term_gt(t1, mk_appl_term(t2, z), bound)
+
+            # Case (@X)
+            y -> MapSet.member?(bound, y)
+          end
+        end
+
+      # Case (@β)
+      {:term, [], {:term, [{:decl, :bv, _, _} | _], _, _, _, _, _} = t, [u], _, _, _} ->
+        # Should be already handled by term constructor logic, as it handles β-reduction
+        term_geq(mk_appl_term(t, u), t2, bound)
+
+      # Case (λη)
+      {:term, [x | _], t, [{:term, [], x, [], _, _, _} = x_term], _, _, _} ->
+        not MapSet.member?(bound, x_term) && term_geq(t, t2, bound)
+        
+      {:term, [{:decl, :bv, _, type1} | _], _, _, _, _, _} ->
+        # Case (λ▷)
+        if term_and_type_geq(mk_appl_term(t1, mk_term(mk_new_free_var(type1))), t2, bound) do
+          true
+        else
+          case t2 do
+            {:term, [{:decl, :bv, _, type2} | _], _, _, _, _, _} ->
+              z = mk_new_free_var(type2) |> mk_term()
+              if type1 == type2 do
+                # Case (λ=)
+                term_gt(mk_appl_term(t1, z), mk_appl_term(t2, z), bound)
+              else
+                # Case (λ≠)
+                term_gt(t1, mk_appl_term(t2, z), bound)
+              end
+
+            # Case (λX)
+            y -> MapSet.member?(bound, y)
+          end
+        end
+    end
+  end
+
+  def term_and_type_gt(t1, t2, bound \\ MapSet.new()), do:
+    term_gt(t1, t2, bound) && type_geq(get_type(t1), get_type(t2))
+  
+  def term_and_type_geq(t1, t2, bound \\ MapSet.new()), do:
+    term_geq(t1, t2, bound) && type_geq(get_type(t1), get_type(t2))
+
+  defp args_gt_by_status(args1, args2, symbol) do
+    case @status[symbol] do
+      :mul ->
+        # Multiset: every u in args2 must be dominated by some t in args1
+        Enum.all?(args2, fn u ->
+          Enum.any?(args1, &(term_and_type_gt(&1, u)))
+        end)
+
+      {:lex, n} ->
+        # Lexicographic: compare first n elements left-to-right
+        if length(args1) >= n && length(args2) >= n do
+          # Fore some j = 1, ..., n: t_j > u_j and for i < j, t_i = u_i
+          Enum.zip(Enum.take(args1, n), Enum.take(args2, n))
+          |> Enum.reduce_while(false, fn {t, u}, _acc ->
+            cond do
+              t == u -> {:cont, false}
+              term_and_type_gt(t, u, MapSet.new()) -> {:halt, true}
+              true -> {:halt, false}
+            end
+          end)
+        else
+          false
+        end
+
+      other ->
+        IO.inspect(other, label: "Unsupported status:")
+        false
+    end
+  end
+
+  # Corresponds to >_@^X
+  def application_gt({:term, [], t, [u], _, _, _} = tu, v, bound) do
+    term_and_type_gt(t, v, bound) ||
+    term_and_type_geq(u, v, bound) ||
+    term_and_type_gt(tu, v, bound)
+  end
+
 end
 ```
 
@@ -193,7 +454,7 @@ $$\displaystyle\frac{\neg (s_o = s_o)}{\star}\neg=_{ooo}$$
 $\quad$
 $$\displaystyle\frac{\neg (s_\iota = s_\iota)}{\star}\neg=_{o\iota\iota}$$
 $\quad$
-$$\displaystyle\frac{\neg(s_{\beta\alpha} = t_{\beta\alpha})}{\star}\neg=_{o(\beta\alpha)(\beta\alpha)}$$
+$$\displaystyle\frac{\neg(s_{\beta\alpha} = s_{\beta\alpha})}{\star}\neg=_{o(\beta\alpha)(\beta\alpha)}$$
 
 _Logical Connectives and their Negation:_
 
@@ -235,6 +496,7 @@ $\operatorname{FV}(A)^i_\alpha$: $i$-th free variable in $A$, of type $\alpha$
 defmodule Tableaux do
   import Util
   @empty_clause MapSet.new()
+  @signature_symbols ["¬", "∨", "∧", "⊃", "≡", "Π", "Σ", "="]
   @type_o {:type, :o, []}
   @type_i {:type, :i, []}
   @type_io {:type, :o, [{:type, :i, []}]}
@@ -433,7 +695,7 @@ defmodule Tableaux do
       [formula = {:term, [], @neg_const, [
         {:term, [], {:decl, :co, name, _}, _, {:type, :o, []}, _, _}
       ], _, _, _} | rest]
-        when name not in ["¬", "∨", "∧", "⊃", "≡", "Π", "Σ", "="] ->
+        when name not in @signature_symbols ->
         IO.puts("negative atom")
         handle_atom(formula, :neg, clause, rest, max_inst, instantiation_count, incomplete?)
 
@@ -451,14 +713,14 @@ defmodule Tableaux do
       #################################################################################
 
       # reflexivity of equality -> a=a is always true
-      #[{:term, [], {:decl, :co, "=", _}, [a, a], _, _, _} | rest] ->
-      #  tableaux(rest, max_inst, clause, instantiation_count, incomplete?)
+      [{:term, [], {:decl, :co, "=", _}, [a, a], _, _, _} | rest] ->
+        tableaux(rest, max_inst, clause, instantiation_count, incomplete?)
 
       # negated equality -> ¬(a=a) is always false
-      #[{:term, [], @neg_const, [
-      #  {:term, [], {:decl, :co, "=", _}, [a, a], _, _, _}
-      #], _, _, _} | _rest] ->
-      #  {:closed, []}
+      [{:term, [], @neg_const, [
+        {:term, [], {:decl, :co, "=", _}, [a, a], _, _, _}
+      ], _, _, _} | _rest] ->
+        {:closed, []}
       
       # equality (type o) -> transform to equivalence
       [{:term, [], {:decl, :co, "=", {:type, :o, [@type_o, @type_o]}}, [a, b], _, _, _} | rest] ->
@@ -879,6 +1141,18 @@ pi = mk_term(mk_pi_const.(type_io_o))
 
 formula = mk_appl_term(pi, lambda_p)
 PrettyPrint.pp_term(formula)
+```
+
+```elixir
+implication
+```
+
+```elixir
+lambda_p
+```
+
+```elixir
+formula
 ```
 
 ```elixir
