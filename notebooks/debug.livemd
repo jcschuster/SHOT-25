@@ -1,0 +1,39 @@
+# Debug
+
+```elixir
+Mix.install([{:hol, "1.0.2"}])
+```
+
+## Setup
+
+```elixir
+import HOL.Data
+import HOL.Terms
+import HOL.Unification
+import HOL.Substitution
+import PrettyPrint
+import TPTPParser
+
+LoggerHelper.set_logger_warning()
+```
+
+## Types, Constants, Terms
+
+```elixir
+type_i = mk_type(:i)
+type_ii = mk_type(type_i, [type_i])
+```
+
+```elixir
+x = mk_free_var_term("X", type_ii)
+c1 = mk_const_term("c1", type_i)
+c2 = mk_const_term("c2", type_i)
+
+t1 = mk_appl_term(x, c1)
+t2 = mk_appl_term(x, c2)
+
+res = unify({t1, t2})
+IO.inspect(res, label: "Unification result")
+
+PrettyPrint.pp_res(res)
+```
