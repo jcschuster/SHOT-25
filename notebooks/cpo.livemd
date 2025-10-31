@@ -1,7 +1,7 @@
 # CPO
 
 ```elixir
-Mix.install([{:hol, "1.0.1"}])
+Mix.install([{:hol, "1.0.2"}])
 ```
 
 ## Setup

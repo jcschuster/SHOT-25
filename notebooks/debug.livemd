@@ -24,6 +24,10 @@ type_i = mk_type(:i)
 type_ii = mk_type(type_i, [type_i])
 ```
 
+$t^1_\iota := X_{\iota\iota} c^1_\iota$
+
+$t^2_\iota := X_{\iota\iota} c^2_\iota$
+
 ```elixir
 x = mk_free_var_term("X", type_ii)
 c1 = mk_const_term("c1", type_i)
