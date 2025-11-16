@@ -47,9 +47,24 @@ type_ooo
 
 ## Constants
 
-$\neg_{oo}, \lor_{ooo}, \land_{ooo}, \supset_{ooo}, \equiv_{ooo}, =_{o\alpha\alpha}, \Pi_{o(o\alpha)}, \Sigma_{o(o\alpha)}$
+$\top_o, \bot_o, \neg_{oo}, \lor_{ooo}, \land_{ooo}, \supset_{ooo}, \equiv_{ooo}, =_{o\alpha\alpha}, \Pi_{o(o\alpha)}, \Sigma_{o(o\alpha)}$
 
 ```elixir
+# constructors
+mk_equals_const = fn t ->
+  mk_const("=", mk_type(type_o, [t, t]))
+end
+mk_pi_const = fn t ->
+  mk_const("Π", mk_type(type_o, [t]))
+end
+mk_sigma_const = fn t ->
+  mk_const("Σ", mk_type(type_o, [t]))
+end
+
+# boolean constants
+top_const    = mk_const("⊤", type_o)
+bottom_const = mk_const("⊥", type_o)
+
 # classical connectives
 neg_const        = mk_const("¬", type_oo)
 or_const         = mk_const("∨", type_ooo)
@@ -61,6 +76,8 @@ equivalent_const = mk_const("≡", type_ooo)
 ## Terms
 
 ```elixir
+top_term        = mk_term(top_const)
+bottom_term     = mk_term(bottom_const)
 neg_term        = mk_term(neg_const)
 or_term         = mk_term(or_const)
 and_term        = mk_term(and_const)
@@ -75,6 +92,8 @@ defmodule Util do
   @type_o {:type, :o, []}
   @neg_const {:decl, :co, "¬", {:type, :o, [{:type, :o, []}]}}
   @neg_term neg_term
+  @bottom_term bottom_term
+  @or_term or_term
   
   def mk_pi_const(type), do: mk_const("Π", mk_type(@type_o, [type]))
 
@@ -146,12 +165,27 @@ defmodule Util do
   def apply_subst(substitutions, term) do
     subst(substitutions, term)
   end
+
+  def to_constraint_term(pairs) do
+    Enum.reduce(pairs, @bottom_term, fn curr, acc ->
+      {{:term, _, _, _, type, _, _} = t1, {:term, _, _, _, type, _, _} = t2} = curr
+      eq = mk_equals_const(type) |> mk_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
+      constraint = mk_appl_term(@neg_term, eq)
+      @or_term |> mk_appl_term(constraint) |> mk_appl_term(acc)
+    end)
+  end
 end
 ```
 
 ## Tableaux
 
 __Rules:__
+
+_Boolean Constants:_
+
+$$\displaystyle\frac{\top_o}{}\top$$
+$\quad$
+$$\displaystyle\frac{\bot_o}{\star}\bot$$
 
 _Atoms:_
 
@@ -217,10 +251,6 @@ $$\displaystyle\frac{\Sigma A_{o\alpha}}{A (\mathbf{sk}_{\alpha\bar t}(\operator
 $\quad$
 $$\displaystyle\frac{\neg(\Sigma A_{o\alpha})}{\neg (A \mathbf{X}_\alpha)}\neg\Sigma$$
 
-_Notation:_
-
-$\star$: branch closed
-
 $\mathbf{X}_\alpha$: fresh variable of type $\alpha$
 
 $\mathbf{sk}_{\alpha\bar t}$: new skolem constant mapping list of types $\bar t$ to type $\alpha$
@@ -241,7 +271,9 @@ defmodule Tableaux do
   @and_const {:decl, :co, "∧", {:type, :o, [{:type, :o, []}, {:type, :o, []}]}}
   @implies_const {:decl, :co, "⊃", {:type, :o, [{:type, :o, []}, {:type, :o, []}]}}
   @equivalent_const {:decl, :co, "≡", {:type, :o, [{:type, :o, []}, {:type, :o, []}]}}
-  
+
+  @bottom_term bottom_term
+  @top_term top_term
   @neg_term neg_term
   @equivalent_term equivalent_term
 
@@ -253,11 +285,11 @@ defmodule Tableaux do
     # iterative deepening
     Enum.reduce_while(1..@max_instantiations//1, {:incomplete, []}, fn max_inst, _ ->
       case tableaux(formulas, max_inst) do
-        {:closed, substitutions} -> {:halt, {:closed, substitutions}}
-        {:open, clause} -> {:halt, {:open, clause}}
-        {:incomplete, clause} ->
+        {:closed, substitutions, constraints} -> {:halt, {:closed, substitutions, constraints}}
+        {:open, clause, constraints} -> {:halt, {:open, clause, constraints}}
+        {:incomplete, clause, constraints} ->
           IO.puts("\nInstantiation limit exceeded, trying higher limit\n")
-          {:cont, {:incomplete, clause}}
+          {:cont, {:incomplete, clause, constraints}}
       end
     end) |> as_assignment()
   end
@@ -284,31 +316,25 @@ defmodule Tableaux do
         {:unif_res_sum, [], _} ->
           "No unification\n" |> IO.puts
           {:cont, nil}
-        # semantically identical literals
-        {:unif_res_sum, [{:unif_sol, [], _} | _], _} ->
-          case {formula, f} do
-            {{:term, [], {:decl, :fv, vname, vtype}, _, _, _, _},
-             {:term, [], {:decl, :fv, vname, vtype}, _, _, _, _}} ->
-              "Substitution found: ∅" |> IO.puts
-              {:halt, []}              
-            {{:term, [], {:decl, :fv, _, _} = var1, _, _, _, _},
-             {:term, [], {:decl, :fv, _, _} = var2, _, _, _, _}} ->
-              s = {:subst, var1, mk_term(var2)}
-              "Substitution found: #{PrettyPrint.pp_subst(s)}" |> IO.puts
-              {:halt, [s]}
-            _ ->
-              "Substitution found: ∅" |> IO.puts
-              {:halt, []}
-          end
-        # substitutions for unification found -> stop
-        {:unif_res_sum, [{:unif_sol, substitutions, _} | _], _} ->
-          "Substitutions found: {#{PrettyPrint.pp_subst(substitutions)}}\n" |> IO.puts
-          {:halt, substitutions}
+        # substitutions/constraints for unification found -> stop
+        {:unif_res_sum, [{:unif_sol, substitutions, flexflex} | _], _} ->
+          if substitutions, do:
+            "Substitutions found: {#{PrettyPrint.pp_subst(substitutions)}}\n" |> IO.puts
+          {:halt, {substitutions, flexflex}}
       end
     end)
   end
 
-  defp handle_atom(formula, polarity, clause, rest, max_inst, instantiation_count, incomplete?) do
+  defp handle_atom(
+    formula,
+    polarity,
+    clause,
+    constraints,
+    rest,
+    max_inst,
+    instantiation_count,
+    incomplete?
+  ) do
     unif_set = case polarity do
       :pos -> sem_negate(clause)
       :neg -> clause
@@ -317,19 +343,28 @@ defmodule Tableaux do
       {:term, [], @neg_const, [inner], _, _, _} -> inner
       _ -> formula
     end
-    substitutions = case unify_with_literals(stripped_formula, unif_set) do
+    {substitutions, flexflex} = case unify_with_literals(stripped_formula, unif_set) do
       nil -> unify_with_literals(sem_negate(formula), syn_negate(unif_set))
       other -> other
     end
-    case substitutions do
-      nil ->
+    case {substitutions, flexflex} do
+      {nil, []} ->
         tableaux(rest, max_inst, MapSet.put(clause, formula), instantiation_count, incomplete?)
+      {nil, _} ->
       _ ->
         {:closed, substitutions}
     end
   end
   
-  defp branch(a, b, rest, clause, max_inst, instantiation_count, incomplete?) do
+  defp branch(
+    a,
+    b,
+    rest,
+    clause,
+    max_inst,
+    instantiation_count,
+    incomplete?
+  ) do
     left_side = List.flatten([a])
     right_side = List.flatten([b])
 
@@ -369,11 +404,12 @@ defmodule Tableaux do
     formulas,
     max_inst, # For iterative deepening
     clause \\ @empty_clause,
+    constraints \\ @bottom_term,
     instantiation_count \\ %{}, # Track instantiations of quantifiers
     incomplete? \\ false
   ) do
     if formulas == [] do
-      "\nNo formulas remain"
+      "\nNo formulas remain" |> IO.puts()
     else
       [formula | rest] = formulas
       "\nProcessing formula #{PrettyPrint.pp_term(formula)}" |> IO.puts()
@@ -389,13 +425,23 @@ defmodule Tableaux do
       # empty formulas and incomplete flag -> rules exhausted while max_inst met
       [] when incomplete? ->
         IO.puts("branch open due to exceeding maximum instantiations")
-        {:incomplete, clause}
+        {:incomplete, clause, constraints}
       
       # empty formulas -> rules exhausted
       [] ->
         IO.puts("branch stays open")
-        {:open, clause}
+        {:open, clause, constraints}
 
+      #################################################################################
+      # BOOLEAN CONSTANTS
+      #################################################################################
+      
+      [@top_term | rest] ->
+        tableaux(rest, max_inst, clause, instantiation_count, incomplete?)
+
+      [@bottom_term | rest] ->
+        {:closed, []}
+        
       #################################################################################
       # ATOMS
       #################################################################################
@@ -718,12 +764,12 @@ defmodule Tableaux do
     end
   end
   
-  defp as_assignment({:closed, _substitutions}) do
+  defp as_assignment({:closed, _substitutions, _constraints}) do
     "All branches closed -> unsatisfiable" |> IO.puts
     :unsat
   end
 
-  defp as_assignment({:open, clause}) do
+  defp as_assignment({:open, clause, _constraints}) do
     "Some branches still open -> countermodel exists" |> IO.puts
     Enum.map(clause, fn v -> case v do
       {:term, [], @neg_const, [u], _, _, _} -> {PrettyPrint.pp_term(u), false}
@@ -731,7 +777,7 @@ defmodule Tableaux do
     end end)
   end
 
-  defp as_assignment({:incomplete, clause}) do
+  defp as_assignment({:incomplete, clause, _constraints}) do
     "Open due to prover incompleteness" |> IO.puts
     {:unknown, Enum.map(clause, fn v -> case v do
       {:term, [], @neg_const, [u], _, _, _} -> {PrettyPrint.pp_term(u), false}
@@ -773,7 +819,7 @@ $$=_{o\iota\iota} a_\iota a_\iota$$
 
 ```elixir
 a = mk_const_term("a", type_i)
-eq = mk_term(Util.mk_equals_const(type_i))
+eq = mk_term(mk_equals_const.(type_i))
 formula = mk_appl_term(mk_appl_term(eq, a), a)
 PrettyPrint.pp_term(formula)
 ```
@@ -784,6 +830,62 @@ Tableaux.prove(formula)
 
 ```elixir
 Tableaux.prove(Util.syn_negate(formula))
+```
+
+0\. $\neg (=_{o\iota\iota} a a)$
+
+1\. $=_{o\iota\iota} a a$ $\quad$ Tableaux initialization
+
+2\. $\Pi_{oo(o\iota)} (\lambda P_{o\iota}. \equiv (P_{o\iota} a_\iota) (P_{o\iota} a_\iota))$ $\quad$ $= (1)$
+
+3\. $\equiv (\mathbf{X}^1_{o\iota} a_\iota) (\mathbf{X}^1_{o\iota} a_\iota)$ $\quad$ $\Pi (2)$
+
+_Branch A:_
+
+4\. $\mathbf{X}^1_{o\iota} a_\iota$ $\quad$ $\equiv (3)$
+
+5\. $\mathbf{X}^1_{o\iota} a_\iota$ $\quad$ $\equiv (3)$
+
+6\. $\equiv (\mathbf{X}^2_{o\iota} a_\iota) (\mathbf{X}^2_{o\iota} a_\iota)$ $\quad$ $\Pi (2)$
+
+_Branch AA:_
+
+7\. $\mathbf{X}^2_{o\iota} a_\iota$ $\quad$ $\equiv (6)$
+
+$\star$ with $\sigma_1 = \{\mathbf{X}^2_{o\iota} \gets (\lambda X_\iota. \neg(\mathbf{X}^1_{o\iota} X_\iota))\}$
+
+_Branch AB including $\sigma_1$:_
+
+8\. $\neg(\mathbf{X}^1_{o\iota} a_\iota)$ $\quad$ $\equiv (6)$
+
+$\star$ with $\sigma_2 = \sigma_1$
+
+_Branch B including $\sigma_2$:_
+
+9\. $\neg(\mathbf{X}^1_{o\iota} a_\iota)$ $\quad$ $\equiv (3)$
+
+10\. $\neg(\mathbf{X}^1_{o\iota} a_\iota)$ $\quad$ $\equiv (3)$
+
+11\. $\equiv (\mathbf{X}^3_{o\iota} a_\iota) (\mathbf{X}^3_{o\iota} a_\iota)$ $\quad$ $\Pi (2)$
+
+_Branch BA:_
+
+12\. $\mathbf{X}^3_{o\iota} a_\iota$ $\quad$ $\equiv (11)$
+
+$\star$ with $\sigma_3 = \{\mathbf{X}^3_{o\iota} \gets \mathbf{X}^1_{o\iota} \}$
+
+_Branch BB including $\sigma_3$:_
+
+13\. $\neg(\mathbf{X}^1_{o\iota} a_\iota)$ $\quad$ $\equiv (11)$
+
+```elixir
+x1 = mk_free_var_term("X1", type_io)
+a = mk_const_term("a", type_i)
+
+x1_a = mk_appl_term(x1, a)
+neg_x1_a = neg_term |> mk_appl_term(x1_a)
+
+unify({x1_a, neg_x1_a}) |> PrettyPrint.pp_res()
 ```
 
 $$a \equiv \neg\neg a$$
@@ -816,10 +918,22 @@ p_term = mk_term(p)
 p_a = mk_appl_term(p_term, a)
 implication = mk_appl_term(mk_appl_term(implies_term, p_a), p_a)
 lambda_p = mk_abstr_term(implication, p)
-pi = mk_term(Util.mk_pi_const(type_io_o))
+pi = mk_term(mk_pi_const.(type_io_o))
 
 formula = mk_appl_term(pi, lambda_p)
 PrettyPrint.pp_term(formula)
+```
+
+```elixir
+implication
+```
+
+```elixir
+lambda_p
+```
+
+```elixir
+formula
 ```
 
 ```elixir
@@ -841,7 +955,7 @@ p_b = mk_appl_term(p2, b)
 p_a = mk_appl_term(p_term, a)
 implication = mk_appl_term(mk_appl_term(implies_term, p_a), p_b)
 lambda_p = mk_abstr_term(implication, p)
-sigma = mk_term(Util.mk_sigma_const(type_io_o))
+sigma = mk_term(mk_sigma_const.(type_io_o))
 
 formula = sigma |> mk_appl_term(lambda_p)
 
@@ -859,9 +973,9 @@ $$\forall P. \exists Y. (P Y) \supset (P a)$$
 $$\Pi_{oo(o\iota)} (\lambda P_{o\iota}. \Sigma_{oo\iota} (\lambda Y_\iota. \supset_{ooo} (P Y) (P a)))$$
 
 ```elixir
-pi = Util.mk_pi_const(type_io_o) |> mk_term()
+pi = mk_pi_const.(type_io_o) |> mk_term()
 p = mk_free_var("P", type_io)
-sigma = Util.mk_sigma_const(type_io) |> mk_term()
+sigma = mk_sigma_const.(type_io) |> mk_term()
 y = mk_free_var("Y", type_i)
 a = mk_const("a", type_i)
 p_y = mk_appl_term(mk_term(p), mk_term(y))
@@ -891,9 +1005,9 @@ f = mk_free_var("f", type_ii)
 x = mk_free_var("x", type_i)
 f_term = mk_term(f)
 x_term = mk_term(x)
-eq_term = mk_term(Util.mk_equals_const(type_i))
-pi_io_term = Util.mk_pi_const(type_io) |> mk_term()
-pi_ii_o_term = Util.mk_pi_const(type_ii_o) |> mk_term()
+eq_term = mk_term(mk_equals_const.(type_i))
+pi_io_term = mk_pi_const.(type_io) |> mk_term()
+pi_ii_o_term = mk_pi_const.(type_ii_o) |> mk_term()
 
 f_x = mk_appl_term(f_term, x_term)
 equality = mk_appl_term(mk_appl_term(eq_term, f_x), f_x)
@@ -917,10 +1031,10 @@ $$\forall f g. (\forall x. f(x) = g(x)) \supset f = g$$
 $$\Pi_{oo(\iota\iota)} (\lambda F_{\iota\iota}. \Pi_{oo(\iota\iota)} (\lambda G_{\iota\iota}. \supset_{ooo} (\Pi_{oo\iota} (\lambda X_\iota. =_{o\iota\iota} (F X) (G X))) ~ (=_{o(\iota\iota)(\iota\iota)} F G)))$$
 
 ```elixir
-outer_pi = Util.mk_pi_const(type_ii_o) |> mk_term()
-inner_pi = Util.mk_pi_const(type_io) |> mk_term()
-left_eq = Util.mk_equals_const(type_i) |> mk_term()
-right_eq = Util.mk_equals_const(type_ii) |> mk_term
+outer_pi = mk_pi_const.(type_ii_o) |> mk_term()
+inner_pi = mk_pi_const.(type_io) |> mk_term()
+left_eq = mk_equals_const.(type_i) |> mk_term()
+right_eq = mk_equals_const.(type_ii) |> mk_term
 
 f = mk_free_var("F", type_ii)
 f_term = f |> mk_term()
@@ -962,7 +1076,7 @@ $$a \overset\equiv= b \coloneqq \forall P. P a \equiv P b$$
 
 ```elixir
 # needed constants and variables
-pi = Util.mk_pi_const(type_io_o) |> mk_term()
+pi = mk_pi_const.(type_io_o) |> mk_term()
 p = mk_free_var("P", type_io)
 p_term = mk_term p
 x = mk_free_var("X", type_i)
@@ -1051,7 +1165,7 @@ Tableaux.prove formula
 
 $\dot=^\alpha \coloneqq \lambda X_\alpha. \lambda Y_\alpha. \forall Q_{o\alpha\alpha} (\forall Z_\alpha. Q_{o\alpha\alpha} Z_\alpha Z_\alpha) \supset (Q_{o\alpha\alpha} X_\alpha Y_\alpha)$
 
-## Surjective Cantor Theorem -> provable but not satisfiable
+## Surjective Cantor Theorem - Provable but not Satisfiable by System
 
 $$\neg \exists F. \forall Y. \exists X. (F X) = Y$$
 
@@ -1060,10 +1174,10 @@ $$\neg \exists F. \forall Y. \exists X. (F X) = Y$$
 $$\neg_{oo} (\Sigma_{oo(o\iota\iota)}(\lambda F_{o\iota\iota}.~\Pi_{oo(o\iota)}(\lambda Y_{o\iota}.~\Sigma_{oo\iota}(\lambda X_{\iota}.~=_{o(o\iota)(o\iota)}(F_{o\iota\iota} X_\iota) Y_{o\iota}))))$$
 
 ```elixir
-equals_io_const = Util.mk_equals_const(type_io)
-sigma_iio_o_const = Util.mk_sigma_const(type_iio_o)
-pi_io_o_const = Util.mk_pi_const(type_io_o)
-sigma_io_const = Util.mk_sigma_const(type_io)
+equals_io_const = mk_equals_const.(type_io)
+sigma_iio_o_const = mk_sigma_const.(type_iio_o)
+pi_io_o_const = mk_pi_const.(type_io_o)
+sigma_io_const = mk_sigma_const.(type_io)
 
 equals_io_term = mk_term(equals_io_const)
 sigma_iio_o_term = mk_term(sigma_iio_o_const)
@@ -1094,19 +1208,21 @@ surj_cantor = mk_appl_term(neg_term, outer_sigma)
 PrettyPrint.pp_term(surj_cantor)
 ```
 
-Theorem is not satisfiable by prover
+```elixir
+surj_cantor |> term_to_tptp() |> IO.puts()
+```
 
 ```elixir
 Tableaux.sat surj_cantor
 ```
 
-Theorem is provable though
-
 ```elixir
 Tableaux.prove surj_cantor
 ```
 
-...this makes the negation of the theorem provable
+```elixir
+neg_term |> mk_appl_term(surj_cantor) |> Tableaux.sat
+```
 
 ```elixir
 neg_term |> mk_appl_term(surj_cantor) |> Tableaux.prove
@@ -1186,55 +1302,7 @@ neg_skolem_term = neg_term |> mk_appl_term(skolem_term)
 unify({h1_h2, neg_skolem_term}) |> PrettyPrint.pp_res
 ```
 
-## Appendix B: Functional Extensionality by Hand
-
-0\. $\Pi_{oo(\iota\iota)}(\lambda F_{\iota\iota}. \Pi_{oo(\iota\iota)}(\lambda G_{\iota\iota}. \supset (\Pi_{oo\iota}(\lambda X_\iota. =_{o\iota\iota} (F_{\iota\iota} X_\iota) (G_{\iota\iota} X_\iota))) (=_{o(\iota\iota)(\iota\iota)} F_{\iota\iota} G_{\iota\iota})))$
-
-1\. $\neg\Pi_{oo(\iota\iota)}(\lambda F_{\iota\iota}. \Pi_{oo(\iota\iota)}(\lambda G_{\iota\iota}. \supset (\Pi_{oo\iota}(\lambda X_\iota. =_{o\iota\iota} (F_{\iota\iota} X_\iota) (G_{\iota\iota} X_\iota))) (=_{o(\iota\iota)(\iota\iota)} F_{\iota\iota} G_{\iota\iota})))$ $\quad$ Tableaux initialization
-
-2\. $\neg (\Pi_{oo(\iota\iota)}(\lambda G_{\iota\iota}. \supset (\Pi_{oo\iota}(\lambda X_\iota. =_{o\iota\iota} (\mathbf{sk}^1_{\iota\iota} X_\iota) (G_{\iota\iota} X_\iota))) (=_{o(\iota\iota)(\iota\iota)} \mathbf{sk}^1_{\iota\iota} G_{\iota\iota})))$ $\quad$ $\neg\Pi (1)$
-
-3\. $\neg (\supset (\Pi_{oo\iota}(\lambda X_\iota. =_{o\iota\iota} (\mathbf{sk}^1_{\iota\iota} X_\iota) (\mathbf{sk}^2_{\iota\iota} X_\iota))) (=_{o(\iota\iota)(\iota\iota)} \mathbf{sk}^1_{\iota\iota} \mathbf{sk}^2_{\iota\iota}))$ $\quad$ $\neg\Pi (2)$
-
-4\. $\Pi_{oo\iota}(\lambda X_\iota. =_{o\iota\iota} (\mathbf{sk}^1_{\iota\iota} X_\iota) (\mathbf{sk}^2_{\iota\iota} X_\iota))$ $\quad$ $\neg\supset (3)$
-
-5\. $\neg(=_{o(\iota\iota)(\iota\iota)} \mathbf{sk}^1_{\iota\iota} \mathbf{sk}^2_{\iota\iota})$ $\quad$ $\neg\supset (3)$
-
-6\. $=_{o\iota\iota} (\mathbf{sk}^1_{\iota\iota} \mathbf{X}^1_\iota) (\mathbf{sk}^2_{\iota\iota} \mathbf{X}^1_\iota)$ $\quad$ $\Pi (4)$
-
-7\. $\Pi_{oo(o\iota)} (\lambda X_{o\iota}. \equiv (X_{o\iota} (\mathbf{sk}^1_{\iota\iota} \mathbf{X}^1_\iota))~(X_{o\iota} (\mathbf{sk}^2_{\iota\iota} \mathbf{X}^1_\iota)))$ $\quad$ $= (6)$
-
-8\. $\equiv (\mathbf{X}^2_{o\iota} (\mathbf{sk}^1_{\iota\iota} \mathbf{X}^1_\iota))~(\mathbf{X}^2_{o\iota} (\mathbf{sk}^2_{\iota\iota} \mathbf{X}^1_\iota))$ $\quad$ $\Pi (7)$
-
-_Branch A:_
-
-9\. $\mathbf{X}^2_{o\iota} (\mathbf{sk}^1_{\iota\iota} \mathbf{X}^1_\iota)$ $\quad$ $\equiv (8)$
-
-10\. $\mathbf{X}^2_{o\iota} (\mathbf{sk}^2_{\iota\iota} \mathbf{X}^1_\iota)$ $\quad$ $\equiv (8)$
-
-11\. $\mathbf{X}^2_{o\iota} (\mathbf{sk}^1_{\iota\iota} \mathbf{X}^1_\iota) \overset ? = \mathbf{X}^2_{o\iota} (\mathbf{sk}^2_{\iota\iota} \mathbf{X}^1_\iota)$ $\quad$ $\Longrightarrow$ close branch and propagate unification constraint
-
-```elixir
-# unification for branch A
-sk1 = mk_const_term("sk1", type_ii)
-sk2 = mk_const_term("sk2", type_ii)
-
-x1 = mk_free_var_term("X1", type_i)
-x2 = mk_free_var_term("X2", type_io)
-
-sk1_x1 = mk_appl_term(sk1, x1)
-x2_sk1_x1 = mk_appl_term(x2, sk1_x1)
-PrettyPrint.pp_term(x2_sk1_x1) |> IO.puts()
-
-sk2_x1 = mk_appl_term(sk2, x1)
-x2_sk2_x1 = mk_appl_term(x2, sk2_x1)
-PrettyPrint.pp_term(x2_sk2_x1) |> IO.puts()
-
-PrettyPrint.pp_res(unify({x2_sk1_x1, x2_sk2_x1}))
-unify {x2_sk1_x1, x2_sk2_x1}
-```
-
-## Appendix C: Negation of Cantor's Surjective Theorem by Hand
+## Appendix B: Negation of Cantor's Surjective Theorem by Hand
 
 ```elixir
 neg_term |> mk_appl_term(surj_cantor) |> Tableaux.prove
@@ -1388,6 +1456,58 @@ PrettyPrint.pp_term(line_19) |> IO.puts()
 unify({line_19, neg_line_18}) |> PrettyPrint.pp_res()
 ```
 
+## Appendix C: Functional Extensionality by Hand
+
+0\. $\Pi_{oo(\iota\iota)}(\lambda F_{\iota\iota}. \Pi_{oo(\iota\iota)}(\lambda G_{\iota\iota}. \supset (\Pi_{oo\iota}(\lambda X_\iota. =_{o\iota\iota} (F_{\iota\iota} X_\iota) (G_{\iota\iota} X_\iota))) (=_{o(\iota\iota)(\iota\iota)} F_{\iota\iota} G_{\iota\iota})))$
+
+1\. $\neg\Pi_{oo(\iota\iota)}(\lambda F_{\iota\iota}. \Pi_{oo(\iota\iota)}(\lambda G_{\iota\iota}. \supset (\Pi_{oo\iota}(\lambda X_\iota. =_{o\iota\iota} (F_{\iota\iota} X_\iota) (G_{\iota\iota} X_\iota))) (=_{o(\iota\iota)(\iota\iota)} F_{\iota\iota} G_{\iota\iota})))$ $\quad$ Tableaux initialization
+
+2\. $\neg (\Pi_{oo(\iota\iota)}(\lambda G_{\iota\iota}. \supset (\Pi_{oo\iota}(\lambda X_\iota. =_{o\iota\iota} (\mathbf{sk}^1_{\iota\iota} X_\iota) (G_{\iota\iota} X_\iota))) (=_{o(\iota\iota)(\iota\iota)} \mathbf{sk}^1_{\iota\iota} G_{\iota\iota})))$ $\quad$ $\neg\Pi (1)$
+
+3\. $\neg (\supset (\Pi_{oo\iota}(\lambda X_\iota. =_{o\iota\iota} (\mathbf{sk}^1_{\iota\iota} X_\iota) (\mathbf{sk}^2_{\iota\iota} X_\iota))) (=_{o(\iota\iota)(\iota\iota)} \mathbf{sk}^1_{\iota\iota} \mathbf{sk}^2_{\iota\iota}))$ $\quad$ $\neg\Pi (2)$
+
+4\. $\Pi_{oo\iota}(\lambda X_\iota. =_{o\iota\iota} (\mathbf{sk}^1_{\iota\iota} X_\iota) (\mathbf{sk}^2_{\iota\iota} X_\iota))$ $\quad$ $\neg\supset (3)$
+
+5\. $\neg(=_{o(\iota\iota)(\iota\iota)} \mathbf{sk}^1_{\iota\iota} \mathbf{sk}^2_{\iota\iota})$ $\quad$ $\neg\supset (3)$
+
+6\. $=_{o\iota\iota} (\mathbf{sk}^1_{\iota\iota} \mathbf{X}^1_\iota) (\mathbf{sk}^2_{\iota\iota} \mathbf{X}^1_\iota)$ $\quad$ $\Pi (4)$
+
+7\. $\Pi_{oo(o\iota)} (\lambda X_{o\iota}. \equiv (X_{o\iota} (\mathbf{sk}^1_{\iota\iota} \mathbf{X}^1_\iota))~(X_{o\iota} (\mathbf{sk}^2_{\iota\iota} \mathbf{X}^1_\iota)))$ $\quad$ $= (6)$
+
+8\. $\equiv (\mathbf{X}^2_{o\iota} (\mathbf{sk}^1_{\iota\iota} \mathbf{X}^1_\iota))~(\mathbf{X}^2_{o\iota} (\mathbf{sk}^2_{\iota\iota} \mathbf{X}^1_\iota))$ $\quad$ $\Pi (7)$
+
+_Branch A:_
+
+9\. $\mathbf{X}^2_{o\iota} (\mathbf{sk}^1_{\iota\iota} \mathbf{X}^1_\iota)$ $\quad$ $\equiv (8)$
+
+10\. $\mathbf{X}^2_{o\iota} (\mathbf{sk}^2_{\iota\iota} \mathbf{X}^1_\iota)$ $\quad$ $\equiv (8)$
+
+11\.
+
+\
+
+?\. $\neg (\Pi_{oo\iota} (\lambda X_\iota. =_{o\iota\iota} (\mathbf{sk}^1_{\iota\iota} X_\iota) (\mathbf{sk}^1_{\iota\iota} X_\iota)))$ $\quad$ $\neg= (5)$
+
+```elixir
+# unification for branch A
+sk1 = mk_const_term("sk1", type_ii)
+sk2 = mk_const_term("sk2", type_ii)
+
+x1 = mk_free_var_term("X1", type_i)
+x2 = mk_free_var_term("X2", type_io)
+
+sk1_x1 = mk_appl_term(sk1, x1)
+x2_sk1_x1 = mk_appl_term(x2, sk1_x1)
+PrettyPrint.pp_term(x2_sk1_x1) |> IO.puts()
+
+sk2_x1 = mk_appl_term(sk2, x1)
+x2_sk2_x1 = mk_appl_term(x2, sk2_x1)
+PrettyPrint.pp_term(x2_sk2_x1) |> IO.puts()
+
+PrettyPrint.pp_res(unify({x2_sk1_x1, x2_sk2_x1}))
+unify {x2_sk1_x1, x2_sk2_x1}
+```
+
 ## Appendix D: Leibnitz Equality by Hand
 
 0\. $\equiv (\Pi_{oo(o\iota)} (\lambda P_{o\iota}. \supset (P_{o\iota} a_\iota) (P_{o\iota} b_\iota)))~(\Pi_{oo(o\iota)} (\lambda P_{o\iota}. \supset (P_{o\iota} b) (P_{o\iota} a)))$
@@ -1444,4 +1564,60 @@ PrettyPrint.pp_term(neg_line_5) |> IO.puts()
 PrettyPrint.pp_term(line_7) |> IO.puts()
 
 unify({line_7, neg_line_5}) |> PrettyPrint.pp_res()
+```
+
+## DEBUG: mk_uniqe_var causes problems -> use string as name
+
+```elixir
+a_term = mk_const_term("a", type_i)
+b_term = mk_const_term("b", type_i) 
+sk_term = mk_const_term("sk_349", mk_type(type_o, [type_i]))
+x_var = mk_free_var("X", mk_type(type_o, [type_i]))
+
+sk_a = mk_appl_term(sk_term, a_term)
+x_b = mk_appl_term(mk_term(x_var), b_term)
+
+IO.puts("sk_a: #{inspect(sk_a)}\n#{PrettyPrint.pp_term(sk_a)}")
+IO.puts("x_b: #{inspect(x_b)}\n#{PrettyPrint.pp_term(x_b)}\n")
+
+unif_res = unify({sk_a, x_b}, true, 15)
+unif_res |> inspect |> IO.puts
+
+PrettyPrint.pp_res(unify({sk_a, x_b}, true, 15))
+```
+
+```elixir
+a_term = mk_const_term("a", type_i)
+b_term = mk_const_term("b", type_i) 
+sk_term = mk_const_term("sk_349", mk_type(type_o, [type_i]))
+x_var = mk_uniqe_var(mk_type(type_o, [type_i]))
+
+sk_a = mk_appl_term(sk_term, a_term)
+x_b = mk_appl_term(mk_term(x_var), b_term)
+
+IO.puts("sk_a: #{inspect(sk_a)}\n#{PrettyPrint.pp_term(sk_a)}")
+IO.puts("x_b: #{inspect(x_b)}\n#{PrettyPrint.pp_term(x_b)}\n")
+
+unif_res = unify({sk_a, x_b}, true, 15)
+unif_res |> inspect |> IO.puts
+
+PrettyPrint.pp_res(unify({sk_a, x_b}, true, 15))
+```
+
+```elixir
+a_term = mk_const_term("a", type_i)
+b_term = mk_const_term("b", type_i) 
+sk_term = mk_const_term("sk_349", mk_type(type_o, [type_i]))
+x_var = Util.mk_new_free_var(mk_type(type_o, [type_i]))
+
+sk_a = mk_appl_term(sk_term, a_term)
+x_b = mk_appl_term(mk_term(x_var), b_term)
+
+IO.puts("sk_a: #{inspect(sk_a)}\n#{PrettyPrint.pp_term(sk_a)}")
+IO.puts("x_b: #{inspect(x_b)}\n#{PrettyPrint.pp_term(x_b)}\n")
+
+unif_res = unify({sk_a, x_b}, true, 15)
+unif_res |> inspect |> IO.puts
+
+PrettyPrint.pp_res(unify({sk_a, x_b}, true, 15))
 ```
