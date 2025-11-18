@@ -41,3 +41,13 @@ IO.inspect(res, label: "Unification result")
 
 PrettyPrint.pp_res(res)
 ```
+
+```elixir
+x = mk_free_var_term("X", type_i)
+y = mk_free_var_term("Y", type_i)
+
+res = unify({x, y})
+IO.inspect(res, label: "Unification result")
+
+PrettyPrint.pp_res(res)
+```
