@@ -85,19 +85,16 @@ defmodule Util do
   def mk_new_skolem_term(fvars, return_type) do
     skolem_const = mk_const(
       "sk_#{System.unique_integer([:positive, :monotonic])}",
-      mk_type(return_type, Enum.map(fvars, fn {:decl, :fv, _, type} -> type end))
+      mk_type(return_type, Enum.map(fvars, &get_type/1))
     )
     # Apply skolem constant to free variables
     Enum.reduce(fvars, mk_term(skolem_const), fn fvar, acc ->
-      mk_appl_term(acc, mk_term(fvar))
+      fvar_term = mk_term(fvar)
+      mk_appl_term(acc, fvar_term)
     end)
   end
 
-  def mk_new_free_var(type) do
-    mk_uniqe_var(type)
-    #unique_name = "X_#{System.unique_integer([:positive, :monotonic])}_#{:erlang.system_time()}"
-    #mk_free_var(unique_name, type)
-  end
+  def mk_new_free_var(type), do: mk_uniqe_var(type)
 
   def constant?(term) do
     case term do
@@ -149,21 +146,21 @@ defmodule Util do
 
   # {:term, [bvars], head, [args], type, [fvars], max_num}
   def flex_flex?({
-    {:term, [], {:decl, :fv, _, _}, type, _, _, _},
-    {:term, [], {:decl, :fv, _, _}, type, _, _, _}
+    {:term, [], {:decl, :fv, _, _}, _, type, _, _},
+    {:term, [], {:decl, :fv, _, _}, _, type, _, _}
   }) do
     true
   end
 
   def flex_flex?({
-    {:term, _, _, type, _, _, _},
-    {:term, _, _, type, _, _, _}
+    {:term, _, _, _, type, _, _},
+    {:term, _, _, _, type, _, _}
   }) do
     false
   end
 
   def pp_constraints(constraints) when is_list(constraints) do
-    Enum.reduce(constraints, "[", fn str, {t1, t2} ->
+    Enum.reduce(constraints, "[", fn {t1, t2}, str ->
       str
         <> case String.length(str) do
             1 -> ""
@@ -173,6 +170,14 @@ defmodule Util do
         <> " = "
         <> PrettyPrint.pp_term(t2)
     end) <> "]"
+  end
+end
+```
+
+```elixir
+defmodule Log do
+  def log(msg) do
+    File.write!("/tmp/log.txt", "#{DateTime.utc_now()} - #{msg}\n", [:append])
   end
 end
 ```
@@ -258,6 +263,7 @@ $\operatorname{FV}(A)^i_\alpha$: $i$-th free variable in $A$, of type $\alpha$
 ```elixir
 defmodule Tableaux do
   import Util
+  import Log
   @empty_clause MapSet.new()
   @signature_symbols ["¬", "∨", "∧", "⊃", "≡", "Π", "Σ", "="]
   @type_o {:type, :o, []}
@@ -274,9 +280,18 @@ defmodule Tableaux do
   @equivalent_term equivalent_term
 
   # Bounds for ensuring termination and complexity control
-  @max_instantiations 2
-  @unification_depth 15
+  @max_instantiations 4
+  @unification_depth 8
 
+  @debug true
+
+  defp debug_print(msg) do
+    if @debug do
+      log(msg)
+    end
+      #IO.puts(msg)
+  end
+  
   def sat(formulas) when is_list(formulas) do
     # iterative deepening
     Enum.reduce_while(1..@max_instantiations//1, {:incomplete, [], []}, fn max_inst, _ ->
@@ -284,7 +299,7 @@ defmodule Tableaux do
         {:closed, unif_checkpoints} -> {:halt, {:closed, unif_checkpoints}}
         {:open, clause, constr} -> {:halt, {:open, clause, constr}}
         {:incomplete, clause, constr} ->
-          IO.puts("\nInstantiation limit exceeded, trying higher limit\n")
+          debug_print("\nInstantiation limit exceeded, trying higher limit\n")
           {:cont, {:incomplete, clause, constr}}
       end
     end) |> as_assignment()
@@ -322,21 +337,38 @@ defmodule Tableaux do
       {:ok, remaining}
     end
   end
+
+  def validate_constraints(flex_flex_pairs, substs) do
+    resolved = Enum.map(flex_flex_pairs, fn {t1, t2} ->
+      {apply_subst(substs, t1), apply_subst(substs, t2)}
+    end)
+    conflicts = Enum.filter(resolved, fn {t1, t2} ->
+      not flex_flex?({t1, t2}) and
+        case unify({t1, t2}, false, @unification_depth) do
+          {:unif_res_sum, [], _} -> true
+          _ -> false
+        end
+    end)
+    conflicts == []
+  end
   
-  defp unify_with_literals(formula, literals, constraints) do
+  def unify_with_literals(formula, literals, constraints) do
     Enum.reduce(literals, [], fn lit, solutions ->
       "Trying to unify #{PrettyPrint.pp_term(formula)} with literal #{PrettyPrint.pp_term(lit)} " <>
-        "under constraints #{pp_constraints(constraints)}" |> IO.puts
+        "under constraints #{pp_constraints(constraints)}" |> debug_print
       result = unify({formula, lit}, true, @unification_depth)
-      PrettyPrint.pp_res(result) |> IO.puts()
+      PrettyPrint.pp_res(result) |> debug_print
       {:unif_res_sum, unif_solutions, _} = result
-      new_solutions = Enum.reduce(unif_solutions, [],
-        fn {:unif_sol, substitutions, flex_flex}, acc ->
-          case solve_constraints(constraints ++ flex_flex, substitutions) do
-            {:conflict, _} -> acc
-            {:ok, remaining} -> [{:unif_checkpoint, substitutions, remaining} | acc]
-          end
-        end)
+      #new_solutions = Enum.reduce(unif_solutions, [],
+      #  fn {:unif_sol, substitutions, flex_flex}, acc ->
+      #    case solve_constraints(constraints ++ flex_flex, substitutions) do
+      #      {:conflict, _} -> acc
+      #      {:ok, remaining} -> [{:unif_checkpoint, substitutions, remaining} | acc]
+      #    end
+      #  end)
+      new_solutions = Enum.map(unif_solutions, fn {:unif_sol, substitutions, flex_flex} ->
+        {:unif_checkpoint, substitutions, constraints ++ flex_flex}
+      end)
       solutions ++ new_solutions
     end)
   end
@@ -368,9 +400,22 @@ defmodule Tableaux do
         # no solutions found with current atom
         tableaux(rest, max_inst, MapSet.put(clause, formula),
           constraints, instantiation_count, incomplete?)
-      _ ->
+      
+      
+    candidates ->
+      valid_checkpoints = Enum.filter(candidates, fn {:unif_checkpoint, substs, constrs} ->
+        validate_constraints(constrs, substs)
+      end)
+      if valid_checkpoints == [] do
+        tableaux(rest, max_inst, MapSet.put(clause, formula), constraints, instantiation_count,
+          incomplete?)
+      else
+        {:closed, valid_checkpoints}
+      end
+        
+      #_ ->
         # unif_checkpoints is a list with elements {:unif_checkpoint, substitutions, remaining}
-        {:closed, unif_checkpoints}
+      #  {:closed, unif_checkpoints}
     end
   end
   
@@ -447,14 +492,14 @@ defmodule Tableaux do
     incomplete? \\ false
   ) do
     if formulas == [] do
-      "\nNo formulas remain"
+      "\nNo formulas remain" |> debug_print
     else
       [formula | rest] = formulas
-      "\nProcessing formula #{PrettyPrint.pp_term(formula)}" |> IO.puts()
+      "\nProcessing formula #{PrettyPrint.pp_term(formula)}" |> debug_print
       rest_str = Enum.map(rest, fn f -> PrettyPrint.pp_term(f) end)
-      IO.inspect(rest_str, label: "Rest")
+      inspect(rest_str, label: "Rest") |> debug_print
       clause_str = Enum.map(clause, &PrettyPrint.pp_term/1)
-      IO.inspect(clause_str, label: "Clause")
+      inspect(clause_str, label: "Clause") |> debug_print
     end
     
     case formulas do
@@ -462,12 +507,12 @@ defmodule Tableaux do
 
       # empty formulas and incomplete flag -> rules exhausted while max_inst met
       [] when incomplete? ->
-        IO.puts("branch open due to exceeding maximum instantiations")
+        debug_print("branch open due to exceeding maximum instantiations")
         {:incomplete, clause, constraints}
       
       # empty formulas -> rules exhausted
       [] ->
-        IO.puts("branch stays open")
+        debug_print("branch stays open")
         {:open, clause, constraints}
 
       #################################################################################
@@ -480,7 +525,7 @@ defmodule Tableaux do
           :term, [], {:decl, :fv, _, _}, _, {:type, :o, []}, _, _
         } | rest
       ] ->
-        IO.puts("positive atom")
+        debug_print("positive atom")
         handle_atom(formula, :pos, clause, rest, constraints,
           max_inst, instantiation_count, incomplete?)
 
@@ -491,7 +536,7 @@ defmodule Tableaux do
         } | rest
       ]
         when name not in @signature_symbols ->
-        IO.puts("positive atom")
+        debug_print("positive atom")
         handle_atom(formula, :pos, clause, rest, constraints,
           max_inst, instantiation_count, incomplete?)
         
@@ -499,7 +544,7 @@ defmodule Tableaux do
       [formula = {:term, [], @neg_const, [
           {:term, [], {:decl, :fv, _, _}, _, {:type, :o, []}, _, _}
       ], _, _, _} | rest] ->
-        IO.puts("negative atom")
+        debug_print("negative atom")
         handle_atom(formula, :neg, clause, rest, constraints,
           max_inst, instantiation_count, incomplete?)
 
@@ -508,7 +553,7 @@ defmodule Tableaux do
         {:term, [], {:decl, :co, name, _}, _, {:type, :o, []}, _, _}
       ], _, _, _} | rest]
         when name not in @signature_symbols ->
-        IO.puts("negative atom")
+        debug_print("negative atom")
         handle_atom(formula, :neg, clause, rest, constraints,
           max_inst, instantiation_count, incomplete?)
 
@@ -518,7 +563,7 @@ defmodule Tableaux do
         
       # double negation
       [{:term, [], @neg_const, [{:term, [], @neg_const, [a], _, _, _}], _, _, _} | rest] ->
-        IO.puts("double negation")
+        debug_print("double negation")
         tableaux([a | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
 
       #################################################################################
@@ -537,7 +582,7 @@ defmodule Tableaux do
       
       # equality (type o) -> transform to equivalence
       [{:term, [], {:decl, :co, "=", {:type, :o, [@type_o, @type_o]}}, [a, b], _, _, _} | rest] ->
-        IO.puts("equality o")
+        debug_print("equality o")
         equiv = @equivalent_term |> mk_appl_term(a) |> mk_appl_term(b)
         tableaux([equiv | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
 
@@ -545,14 +590,14 @@ defmodule Tableaux do
       [{:term, [], @neg_const, [
         {:term, [], {:decl, :co, "=", {:type, :o, [@type_o, @type_o]}}, [a, b], _, _, _}
       ], _, _, _} | rest] ->
-        IO.puts("negated equality o")
+        debug_print("negated equality o")
         eq = @equivalent_term |> mk_appl_term(a) |> mk_appl_term(b)
         neg_eq = @neg_term |> mk_appl_term(eq)
         tableaux([neg_eq | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
       
       # equality (type i) -> Leibnitz equality
       [{:term, [], {:decl, :co, "=", {:type, :o, [@type_i, @type_i]}}, [a, b], _, _, _} | rest] ->
-        IO.puts("equality i")
+        debug_print("equality i")
         p = mk_new_free_var(@type_io)
         p_term = mk_term(p) 
         p_a = mk_appl_term(p_term, a)
@@ -569,7 +614,7 @@ defmodule Tableaux do
       [{:term, [], @neg_const, [
         {:term, [], {:decl, :co, "=", {:type, :o, [@type_i, @type_i]}}, [a, b], _, _, _}
       ], _, _, _} | rest] ->
-        IO.puts("negaed equality i")
+        debug_print("negaed equality i")
         p = mk_new_free_var(@type_io)
         p_term = mk_term(p) 
         p_a = mk_appl_term(p_term, a)
@@ -591,7 +636,7 @@ defmodule Tableaux do
         [a, b],
         _, _, _
       } | rest] ->
-        IO.puts("equality function")
+        debug_print("equality function")
         [first_arg_type | rest_arg_types] = get_arg_types(type)
         goal_type = mk_type(get_goal_type(type), rest_arg_types)
         x = mk_new_free_var(first_arg_type)
@@ -611,7 +656,7 @@ defmodule Tableaux do
       [{:term, [], @neg_const, [
         {:term, [], {:decl, :co, "=", {:type, :o, [type, type]}}, [a, b], _, _, _}
       ], _, _, _} | rest] ->
-        IO.puts("negated equality function")
+        debug_print("negated equality function")
         [first_arg_type | rest_arg_types] = get_arg_types(type)
         goal_type = mk_type(get_goal_type(type), rest_arg_types)
         x = mk_new_free_var(first_arg_type)
@@ -635,41 +680,41 @@ defmodule Tableaux do
         
       # disjunction
       [{:term, [], @or_const, [a, b], _, _, _} | rest] ->
-        IO.puts("disjunction")
+        debug_print("disjunction")
         branch(a, b, rest, clause, constraints, max_inst, instantiation_count, incomplete?)
 
       # negated disjunction
       [{:term, [], @neg_const, [{:term, [], @or_const, [a, b], _, _, _}], _, _, _} | rest] ->
-        IO.puts("negated disjunction")
+        debug_print("negated disjunction")
         tableaux([sem_negate(a), sem_negate(b) | rest], max_inst,
           clause, constraints, instantiation_count, incomplete?)
       
       # conjunction
       [{:term, [], @and_const, [a, b], _, _, _} | rest] ->
-        IO.puts("conjunction")
+        debug_print("conjunction")
         tableaux([a, b | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
 
       # negated conjunction
       [{:term, [], @neg_const, [{:term, [], @and_const, [a, b], _, _, _}], _, _, _} | rest] ->
-        IO.puts("negated conjunction")
+        debug_print("negated conjunction")
         branch(sem_negate(a), sem_negate(b), rest, clause,
           constraints, max_inst, instantiation_count, incomplete?)
 
       # implication
       [{:term, [], @implies_const, [a, b], _, _, _} | rest] ->
-        IO.puts("implication")
+        debug_print("implication")
         branch(sem_negate(a), b, rest, clause, constraints,
           max_inst, instantiation_count, incomplete?)
 
       # negated implication
       [{:term, [], @neg_const, [{:term, [], @implies_const, [a, b], _, _, _}], _, _, _} | rest] ->
-        IO.puts("negated implication")
+        debug_print("negated implication")
         tableaux([a, sem_negate(b) | rest], max_inst, clause,
           constraints, instantiation_count, incomplete?)
 
       # equivalence
       [{:term, [], @equivalent_const, [a, b], _, _, _} | rest] ->
-        IO.puts("equivalence")
+        debug_print("equivalence")
         branch([a, b], [sem_negate(a), sem_negate(b)], rest, clause,
           constraints, max_inst, instantiation_count, incomplete?)
 
@@ -677,7 +722,7 @@ defmodule Tableaux do
       [{:term, [], @neg_const, [
         {:term, [], @equivalent_const, [a, b], _, _, _}
       ], _, _, _} | rest] ->
-        IO.puts("negated equivalence")
+        debug_print("negated equivalence")
         branch([sem_negate(a), b], [a, sem_negate(b)], rest, clause,
           constraints, max_inst, instantiation_count, incomplete?)
 
@@ -691,7 +736,7 @@ defmodule Tableaux do
         {:decl, :co, "Π", {:type, :o, [{:type, :o, [type]}]}},
         [body], _, _, _
       } | rest] ->
-        IO.puts("universal quantification")
+        debug_print("universal quantification")
         count = Map.get(instantiation_count, term, 0)
         if count < max_inst do
           new_instantiation_count = Map.put(instantiation_count, term, count + 1)
@@ -701,7 +746,7 @@ defmodule Tableaux do
             clause, constraints, new_instantiation_count, incomplete?)
         else
           # skip the universal quantification - upper bound of instantiations reached
-          IO.puts("instantiation limit exceeded")
+          debug_print("instantiation limit exceeded")
           tableaux(rest, max_inst, clause, constraints, instantiation_count, true)
         end
 
@@ -713,7 +758,7 @@ defmodule Tableaux do
           _, _, _
         } | rest
       ] ->
-        IO.puts("negated universal quantification")
+        debug_print("negated universal quantification")
         tableaux(
           [
             mk_appl_term(@neg_term, mk_appl_term(body, mk_new_skolem_term(get_fvars(body), type)))
@@ -728,7 +773,7 @@ defmodule Tableaux do
           [body], _, _, _
         } | rest
       ] ->
-        IO.puts("existential quantification")
+        debug_print("existential quantification")
         tableaux([mk_appl_term(body, mk_new_skolem_term(get_fvars(body), type)) | rest],
           max_inst, clause, constraints, instantiation_count, incomplete?)
 
@@ -739,7 +784,7 @@ defmodule Tableaux do
           ], _, _, _
         } | rest
       ] ->
-        IO.puts("negated existential quantification")
+        debug_print("negated existential quantification")
         count = Map.get(instantiation_count, term, 0)
         if count < max_inst do
           new_instantiation_count = Map.put(instantiation_count, term, count + 1)
@@ -749,19 +794,19 @@ defmodule Tableaux do
             clause, constraints, new_instantiation_count, incomplete?)
         else
           # skip the negated existential quantification - upper bound of instantiations reached
-          IO.puts("instantiation limit exceeded")
+          debug_print("instantiation limit exceeded")
           tableaux(rest, max_inst, clause, constraints, instantiation_count, true)
         end
     end
   end
   
   defp as_assignment({:closed, _}) do
-    "All branches closed -> unsatisfiable" |> IO.puts
+    "All branches closed -> unsatisfiable" |> debug_print
     :unsat
   end
 
   defp as_assignment({:open, clause, constraints}) do
-    "Some branches still open -> countermodel exists" |> IO.puts
+    "Some branches still open -> countermodel exists" |> debug_print
     Enum.reduce(clause, "[", fn v, str ->
       str <>
       case String.length(str) do
@@ -778,7 +823,7 @@ defmodule Tableaux do
   end
 
   defp as_assignment({:incomplete, clause, constraints}) do
-    "Result unknown due to prover incompleteness" |> IO.puts
+    "Result unknown due to prover incompleteness" |> debug_print
     {:unknown, Enum.reduce(clause, "[", fn v, str ->
       str <>
       case String.length(str) do
@@ -812,12 +857,12 @@ PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-Tableaux.prove formula
+#Tableaux.prove formula
 ```
 
 ```elixir
 neg_formula = neg_term |> mk_appl_term(formula)
-Tableaux.prove neg_formula
+#Tableaux.prove neg_formula
 ```
 
 $$a = a$$
@@ -834,11 +879,11 @@ PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-Tableaux.prove(formula)
+#Tableaux.prove(formula)
 ```
 
 ```elixir
-Tableaux.prove(Util.syn_negate(formula))
+#Tableaux.prove(Util.syn_negate(formula))
 ```
 
 $$a \equiv \neg\neg a$$
@@ -855,7 +900,7 @@ PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-Tableaux.prove formula
+#Tableaux.prove formula
 ```
 
 $$\forall P. (P a) \supset (P a)$$
@@ -878,7 +923,7 @@ PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-Tableaux.prove formula
+#Tableaux.prove formula
 ```
 
 $$\exists P. (P a) \supset (p b)$$
@@ -904,7 +949,7 @@ PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-Tableaux.prove formula
+#Tableaux.prove formula
 ```
 
 $$\forall P. \exists Y. (P Y) \supset (P a)$$
@@ -932,7 +977,7 @@ PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-Tableaux.prove formula
+#Tableaux.prove formula
 ```
 
 $$\forall F. \forall X. (FX) = (F X)$$
@@ -960,10 +1005,10 @@ PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-Tableaux.prove formula
+#Tableaux.prove formula
 ```
 
-## Functional Extensionality -> not provable
+## Functional Extensionality
 
 $$\forall f g. (\forall x. f(x) = g(x)) \supset f = g$$
 
@@ -1000,11 +1045,7 @@ PrettyPrint.pp_term formula
 ```
 
 ```elixir
-TPTPParser.term_to_tptp(formula) |> IO.puts()
-```
-
-```elixir
-Tableaux.prove formula
+#Tableaux.prove formula
 ```
 
 ## Notions of Leibnitz Equality
@@ -1048,7 +1089,7 @@ PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-Tableaux.prove formula
+#Tableaux.prove formula
 ```
 
 $$(X \overset\supset= Y) \equiv (X \overset\subset= Y)$$
@@ -1071,7 +1112,7 @@ PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-Tableaux.prove formula
+#Tableaux.prove formula
 ```
 
 $$(a \overset\supset= b) \equiv (a \overset\subset= b)$$
@@ -1099,7 +1140,7 @@ PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-Tableaux.prove formula
+#Tableaux.prove formula
 ```
 
 ## Andrews equality

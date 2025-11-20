@@ -22,6 +22,7 @@ LoggerHelper.set_logger_warning()
 ```elixir
 type_i = mk_type(:i)
 type_ii = mk_type(type_i, [type_i])
+type_iii = mk_type(type_i, [type_ii])
 ```
 
 $t^1_\iota := X_{\iota\iota} c^1_\iota$
@@ -42,12 +43,25 @@ IO.inspect(res, label: "Unification result")
 PrettyPrint.pp_res(res)
 ```
 
+$t_\iota^1 := X_\iota$
+
+$t_\iota^2 := f_{\iota\iota} X_\iota$
+
 ```elixir
 x = mk_free_var_term("X", type_i)
-y = mk_free_var_term("Y", type_i)
+f = mk_const_term("f", type_ii)
 
-res = unify({x, y})
-IO.inspect(res, label: "Unification result")
+f_x = mk_appl_term(f, x)
+
+res = unify({x, f_x})
+IO.inspect(res)
 
 PrettyPrint.pp_res(res)
+```
+
+```elixir
+a = mk_free_var_term("A", type_ii)
+b = mk_free_var_term("B", type_i)
+
+mk_appl_term(a, b)
 ```
