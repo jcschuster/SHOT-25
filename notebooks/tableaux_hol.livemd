@@ -177,7 +177,8 @@ end
 ```elixir
 defmodule Log do
   def log(msg) do
-    File.write!("/tmp/log.txt", "#{DateTime.utc_now()} - #{msg}\n", [:append])
+    IO.puts(msg)
+    #File.write!("/tmp/log.txt", "#{DateTime.utc_now()} - #{msg}\n", [:append])
   end
 end
 ```
@@ -356,7 +357,7 @@ defmodule Tableaux do
     Enum.reduce(literals, [], fn lit, solutions ->
       "Trying to unify #{PrettyPrint.pp_term(formula)} with literal #{PrettyPrint.pp_term(lit)} " <>
         "under constraints #{pp_constraints(constraints)}" |> debug_print
-      result = unify({formula, lit}, true, @unification_depth)
+      result = unify([{formula, lit} | constraints], true, @unification_depth)
       PrettyPrint.pp_res(result) |> debug_print
       {:unif_res_sum, unif_solutions, _} = result
       #new_solutions = Enum.reduce(unif_solutions, [],
@@ -365,9 +366,10 @@ defmodule Tableaux do
       #      {:conflict, _} -> acc
       #      {:ok, remaining} -> [{:unif_checkpoint, substitutions, remaining} | acc]
       #    end
-      #  end)
+      #  end)      
       new_solutions = Enum.map(unif_solutions, fn {:unif_sol, substitutions, flex_flex} ->
-        {:unif_checkpoint, substitutions, constraints ++ flex_flex}
+        # {:unif_checkpoint, substitutions, constraints ++ flex_flex}
+        {:unif_checkpoint, substitutions, flex_flex}
       end)
       solutions ++ new_solutions
     end)
@@ -403,15 +405,16 @@ defmodule Tableaux do
       
       
     candidates ->
-      valid_checkpoints = Enum.filter(candidates, fn {:unif_checkpoint, substs, constrs} ->
-        validate_constraints(constrs, substs)
-      end)
-      if valid_checkpoints == [] do
-        tableaux(rest, max_inst, MapSet.put(clause, formula), constraints, instantiation_count,
-          incomplete?)
-      else
-        {:closed, valid_checkpoints}
-      end
+      {:closed, candidates}
+      #valid_checkpoints = Enum.filter(candidates, fn {:unif_checkpoint, substs, constrs} ->
+      #  validate_constraints(constrs, substs)
+      #end)
+      #if valid_checkpoints == [] do
+      #  tableaux(rest, max_inst, MapSet.put(clause, formula), constraints, instantiation_count,
+      #    incomplete?)
+      #else
+      #  {:closed, valid_checkpoints}
+      #end
         
       #_ ->
         # unif_checkpoints is a list with elements {:unif_checkpoint, substitutions, remaining}
@@ -444,6 +447,7 @@ defmodule Tableaux do
               constraints, instantiation_count, incomplete?)
           _ ->
             # Try checkpoints on right branch and propagate up
+            # TODO: We only need to close one or-branch, so reduce_while should be used
             {new_checkpoints, last_open} = Enum.reduce(unif_checkpoints, {[], nil},
             fn {:unif_checkpoint, substitutions, remaining}, {checkpoints, prev_open} ->
               new_rest = apply_subst(substitutions, rest)
