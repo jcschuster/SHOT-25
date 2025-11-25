@@ -1,0 +1,473 @@
+# Parser for TH0
+
+```elixir
+Mix.install([{:hol, "1.0.2"}, {:nimble_parsec, "~> 1.4.2"}])
+```
+
+## Setup
+
+```elixir
+import HOL.Data
+import HOL.Terms
+import PrettyPrint
+
+LoggerHelper.set_logger_warning()
+```
+
+```elixir
+defmodule Util do
+  @type_o {:type, :o, []}
+  
+  def mk_pi_const(type), do: mk_const("Π", mk_type(@type_o, [type]))
+
+  def mk_sigma_const(type), do: mk_const("Σ", mk_type(@type_o, [type]))
+
+  def mk_equals_const(type), do: mk_const("=", mk_type(@type_o, [type, type]))
+end
+```
+
+```elixir
+defmodule TH0Parser.Tokenizer do
+  import NimbleParsec
+
+  whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 1) |> ignore()
+
+  comment = string("%") |> concat(ascii_string([not: ?\n], min: 0)) |> ignore()
+
+  system_symbol =
+    string("$")
+    |> ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1)
+    |> reduce({Enum, :join, []})
+    |> unwrap_and_tag(:system)
+
+  variable =
+    ascii_string([?A..?Z], 1)
+    |> optional(ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1))
+    |> reduce({Enum, :join, []})
+    |> unwrap_and_tag(:var)
+
+  atom_ident =
+    ascii_string([?a..?z], 1)
+    |> optional(ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1))
+    |> reduce({Enum, :join, []})
+    |> unwrap_and_tag(:atom)
+
+  distinct_object =
+    ignore(string("'"))
+    |> concat(ascii_string([not: ?'], min: 1))
+    |> ignore(string("'"))
+    |> unwrap_and_tag(:distinct)
+
+  symbols =
+    choice([
+      # Connectives
+      string("<=>") |> replace({:equiv, "<=>"}),
+      string("=>")  |> replace({:implies, "=>"}),
+      string("<=")  |> replace({:rev_implies, "<="}),
+      string("<~>") |> replace({:xor, "<~>"}),
+      string("~|")  |> replace({:nor, "~|"}),
+      string("~&")  |> replace({:nand, "~&"}),
+
+      # Quantifiers and Operators
+      string("!")   |> replace({:forall, "!"}),
+      string("?")   |> replace({:exists, "?"}),
+      string("^")   |> replace({:lambda, "^"}),
+      string("@")   |> replace({:app, "@"}),
+      string("~")   |> replace({:not, "~"}),
+      string("|")   |> replace({:or, "|"}),
+      string("&")   |> replace({:and, "&"}),
+      string("!=")  |> replace({:neq, "!="}),
+      string("=")   |> replace({:eq, "="}),
+
+      # Punctuation
+      string("(")   |> replace({:lparen, "("}),
+      string(")")   |> replace({:rparen, ")"}),
+      string("[")   |> replace({:lbracket, "["}),
+      string("]")   |> replace({:rbracket, "]"}),
+      string(":")   |> replace({:colon, ":"}),
+      string(",")   |> replace({:comma, ","}),
+      string(".")   |> replace({:dot, "."}),
+
+      # Types
+      string(">")   |> replace({:arrow, ">"})
+    ])
+
+    defparsec :tokenize,
+      repeat(
+        choice([
+          whitespace,
+          comment,
+          symbols,
+          system_symbol,
+          variable,
+          atom_ident,
+          distinct_object
+        ])
+      )  
+end
+```
+
+```elixir
+defmodule TH0Parser.Parser do
+  alias TH0Parser.Tokenizer
+  import HOL.Data
+  import HOL.Terms
+  # We use the Util module provided in your tableaux_hol.livemd
+  import Util
+
+  @type_o mk_type(:o)
+  @type_oo mk_type(@type_o, [@type_o])
+  @type_ooo mk_type(@type_o, [@type_o, @type_o])
+
+  @neg_term mk_term(mk_const("¬", @type_oo))
+  @or_term mk_term(mk_const("∨", @type_ooo))
+  @and_term mk_term(mk_const("∧", @type_ooo))
+  @implies_term mk_term(mk_const("⊃", @type_ooo))
+  @equivalent_term mk_term(mk_const("≡", @type_ooo))
+
+  # Context struct to track variable types and declared constants
+  defmodule Context do
+    defstruct vars: %{}, consts: %{}
+
+    def new, do: %Context{}
+
+    def put_var(ctx, name, type) do
+      %Context{ctx | vars: Map.put(ctx.vars, name, type)}
+    end
+
+    def get_type(ctx, name) do
+      Map.get(ctx.vars, name) || Map.get(ctx.consts, name)
+    end
+    
+    # In a full implementation, you would populate consts from previous type declarations
+    def put_const(ctx, name, type) do
+      %Context{ctx | consts: Map.put(ctx.consts, name, type)}
+    end
+  end
+
+  # --- Entry Point ---
+
+  def parse(tokens, context \\ Context.new()) do
+    {term, []} = parse_formula(tokens, context)
+    term
+  end
+
+  # --- Precedence Levels ---
+
+  # Level 1: <, >, <=, =>, <=>, <~>
+  defp parse_formula(tokens, ctx) do
+    {lhs, rest} = parse_disjunction(tokens, ctx)
+    parse_formula_op(lhs, rest, ctx)
+  end
+
+  defp parse_formula_op(lhs, [{:equiv, _} | rest], ctx) do
+    {rhs, rest2} = parse_formula(rest, ctx)
+    # Construct: equivalent_term @ lhs @ rhs
+    # Note: We assume standard HOL boolean types for connectives
+    term = mk_appl_term(mk_appl_term(@equivalent_term, lhs), rhs)
+    {term, rest2}
+  end
+  
+  defp parse_formula_op(lhs, [{:implies, _} | rest], ctx) do
+    {rhs, rest2} = parse_formula(rest, ctx)
+    term = mk_appl_term(mk_appl_term(@implies_term, lhs), rhs)
+    {term, rest2}
+  end
+
+  defp parse_formula_op(lhs, [{:rev_implies, _} | rest], ctx) do
+    # Desugar: A <= B  becomes  B => A
+    {rhs, rest2} = parse_formula(rest, ctx)
+    # Note order: implies @ rhs @ lhs
+    term = mk_appl_term(mk_appl_term(@implies_term, rhs), lhs)
+    {term, rest2}
+  end
+  
+  defp parse_formula_op(lhs, [{:xor, _} | rest], ctx) do
+    # Desugar: A <~> B  becomes  ~(A <=> B)
+    {rhs, rest2} = parse_formula(rest, ctx)    
+    inner = mk_appl_term(mk_appl_term(@equivalent_term, lhs), rhs)
+    term  = mk_appl_term(@neg_term, inner)
+    {term, rest2}
+  end
+
+  defp parse_formula_op(lhs, tokens, _ctx), do: {lhs, tokens}
+
+  # Level 2: | (OR), & (AND), ~| (NOR), ~& (NAND)
+  defp parse_disjunction(tokens, ctx) do
+    {lhs, rest} = parse_conjunction(tokens, ctx)
+    parse_disjunction_op(lhs, rest, ctx)
+  end
+
+  defp parse_disjunction_op(lhs, [{:or, _} | rest], ctx) do
+    {rhs, rest2} = parse_conjunction(rest, ctx)
+    term = mk_appl_term(mk_appl_term(@or_term, lhs), rhs)
+    parse_disjunction_op(term, rest2, ctx)
+  end
+
+  defp parse_disjunction_op(lhs, [{:nor, _} | rest], ctx) do
+    # Desugar: A ~| B  becomes  ~(A | B)
+    {rhs, rest2} = parse_conjunction(rest, ctx)
+    
+    inner = mk_appl_term(mk_appl_term(@or_term, lhs), rhs)
+    term  = mk_appl_term(@neg_term, inner)
+    parse_disjunction_op(term, rest2, ctx)
+  end
+
+  defp parse_disjunction_op(lhs, tokens, _ctx), do: {lhs, tokens}
+
+  defp parse_conjunction(tokens, ctx) do
+    {lhs, rest} = parse_unitary(tokens, ctx)
+    parse_conjunction_op(lhs, rest, ctx)
+  end
+
+  defp parse_conjunction_op(lhs, [{:and, _} | rest], ctx) do
+    {rhs, rest2} = parse_unitary(rest, ctx)
+    term = mk_appl_term(mk_appl_term(@and_term, lhs), rhs)
+    parse_conjunction_op(term, rest2, ctx)
+  end
+
+  defp parse_conjunction_op(lhs, [{:nand, _} | rest], ctx) do
+    # Desugar: A ~& B  becomes  ~(A & B)
+    {rhs, rest2} = parse_unitary(rest, ctx)
+    
+    inner = mk_appl_term(mk_appl_term(@and_term, lhs), rhs)
+    term  = mk_appl_term(@neg_term, inner)
+    parse_conjunction_op(term, rest2, ctx)
+  end
+
+  defp parse_conjunction_op(lhs, tokens, _ctx), do: {lhs, tokens}
+
+  # Level 3: Unitary (~), Quantifiers (!, ?), Equality (=), Application (@)
+  defp parse_unitary([{:not, _} | rest], ctx) do
+    {term, rest2} = parse_unitary(rest, ctx)
+    {mk_appl_term(@neg_term, term), rest2}
+  end
+
+  defp parse_unitary([{:forall, _} | rest], ctx), do: parse_quantifier(:pi, rest, ctx)
+  defp parse_unitary([{:exists, _} | rest], ctx), do: parse_quantifier(:sigma, rest, ctx)
+  defp parse_unitary([{:lambda, _} | rest], ctx), do: parse_lambda(rest, ctx)
+
+  defp parse_unitary(tokens, ctx) do
+    parse_equality(tokens, ctx)
+  end
+
+  # Equality (=) requires STRICT type checking to generate the correct constant
+  defp parse_equality(tokens, ctx) do
+    {lhs, rest} = parse_application(tokens, ctx)
+
+    case rest do
+      [{:eq, _} | rest2] ->
+        {rhs, rest3} = parse_application(rest2, ctx)
+        
+        # KEY STEP: Get the type of the arguments
+        # mk_equals_const in Util takes the *domain type* (type of LHS/RHS)
+        lhs_type = HOL.Data.get_term_type(lhs)
+        
+        # Construct specific equality constant for this type 
+        eq_const_decl = Util.mk_equals_const(lhs_type)
+        eq_term = mk_term(eq_const_decl)
+        
+        # Build (Eq @ LHS) @ RHS
+        term = mk_appl_term(mk_appl_term(eq_term, lhs), rhs)
+        {term, rest3}
+
+      [{:neq, _} | rest2] ->
+         # != is just ~(A = B)
+         {rhs, rest3} = parse_application(rest2, ctx)
+         lhs_type = HOL.Data.get_term_type(lhs)
+         eq_const_decl = Util.mk_equals_const(lhs_type)
+         eq_term = mk_term(eq_const_decl)
+         inner = mk_appl_term(mk_appl_term(eq_term, lhs), rhs)
+         {mk_appl_term(@neg_term, inner), rest3}
+
+      _ -> {lhs, rest}
+    end
+  end
+
+  # Application (@) is Left Associative: f @ a @ b -> (f @ a) @ b
+  defp parse_application(tokens, ctx) do
+    {lhs, rest} = parse_atomic(tokens, ctx)
+    parse_app_chain(lhs, rest, ctx)
+  end
+
+  defp parse_app_chain(lhs, [{:app, _} | rest], ctx) do
+    {rhs, rest2} = parse_atomic(rest, ctx)
+    term = mk_appl_term(lhs, rhs)
+    parse_app_chain(term, rest2, ctx)
+  end
+  defp parse_app_chain(lhs, tokens, _ctx), do: {lhs, tokens}
+
+  # --- Quantifiers and Abstractions ---
+
+  # Handles ! [X:Type, Y:Type]: Body
+  defp parse_quantifier(type_key, [{:lbracket, _} | rest], ctx) do
+    {vars, [{:rbracket, _}, {:colon, _} | body_tokens]} = parse_typed_vars(rest, [])
+    
+    # We must process variables from right to left to nest them correctly
+    # ! [X, Y]: P  becomes  Pi \X. (Pi \Y. P)
+    # So we parse P first with the full context, then wrap outwards.
+    
+    # 1. Update Context with ALL new variables
+    inner_ctx = Enum.reduce(vars, ctx, fn {name, type}, acc -> 
+      Context.put_var(acc, name, type) 
+    end)
+
+    # 2. Parse Body
+    {body_term, rest_tokens} = parse_formula(body_tokens, inner_ctx)
+
+    # 3. Desugar backwards (fold_right behavior)
+    # vars is [X, Y]. We want Pi X (Pi Y P).
+    # List is currently [{X, Tx}, {Y, Ty}].
+    # We define a helper to wrap one layer.
+    
+    term = 
+      vars
+      |> Enum.reverse()
+      |> Enum.reduce(body_term, fn {name, var_type}, acc_term ->
+        # Create Abstraction: \Var. Acc
+        # We need the free variable term to abstract over
+        var_const = mk_free_var(name, var_type)
+        abs_term = mk_abstr_term(acc_term, var_const)
+        
+        # Create Quantifier: Pi or Sigma
+        # WARNING: Util.mk_pi_const takes the SET TYPE (domain -> bool) 
+        # The type of our abstraction `abs_term` IS `var_type -> bool`.
+        # So we construct the quantifier constant for this predicate.
+        
+        # Get type of the predicate (the abstraction we just built)
+        pred_type = HOL.Data.get_term_type(abs_term)
+        
+        quant_const_decl = case type_key do
+          :pi -> Util.mk_pi_const(pred_type)
+          :sigma -> Util.mk_sigma_const(pred_type) # Assuming Util has mk_sigma_const
+        end
+        
+        quant_term = mk_term(quant_const_decl)
+        
+        # Apply Quantifier to Abstraction
+        mk_appl_term(quant_term, abs_term)
+      end)
+
+    {term, rest_tokens}
+  end
+
+  # Handles ^ [X:Type]: Body
+  defp parse_lambda([{:lbracket, _} | rest], ctx) do
+    {vars, [{:rbracket, _}, {:colon, _} | body_tokens]} = parse_typed_vars(rest, [])
+    
+    inner_ctx = Enum.reduce(vars, ctx, fn {name, type}, acc -> 
+      Context.put_var(acc, name, type) 
+    end)
+
+    {body_term, rest_tokens} = parse_formula(body_tokens, inner_ctx)
+
+    # Wrap logic for Lambda is simpler: just mk_abstr_term
+    term = 
+      vars
+      |> Enum.reverse()
+      |> Enum.reduce(body_term, fn {name, var_type}, acc_term ->
+        var_const = mk_free_var(name, var_type)
+        mk_abstr_term(acc_term, var_const)
+      end)
+      
+    {term, rest_tokens}
+  end
+
+  # Helper to parse [X: $i, Y: $o]
+  defp parse_typed_vars([{:var, name}, {:colon, _} | rest], acc) do
+    {type, rest2} = parse_type(rest)
+    new_acc = acc ++ [{name, type}]
+    
+    case rest2 do
+      [{:comma, _} | rest3] -> parse_typed_vars(rest3, new_acc)
+      _ -> {new_acc, rest2}
+    end
+  end
+
+  # --- Types ---
+  
+  # Parses $i, $o, or A > B
+  defp parse_type(tokens) do
+    {lhs, rest} = parse_atomic_type(tokens)
+    
+    case rest do
+      [{:arrow, _} | rest2] ->
+        # Right associative: A > B > C is A > (B > C)
+        {rhs, rest3} = parse_type(rest2)
+        # Construct function type: mk_type(:o, [arg]) maps to "arg > o"?
+        # Wait, the prompt provided specific definitions in tableaux_hol.livemd:
+        # type_io = mk_type(type_o, [type_i]) means i -> o.
+        # mk_type(return_type, [arg_types]) [cite: 1]
+        
+        # So A > B means a function taking A returning B.
+        # Construct: mk_type(rhs, [lhs])
+        type = mk_type(rhs, [lhs])
+        {type, rest3}
+        
+      _ -> {lhs, rest}
+    end
+  end
+
+  defp parse_atomic_type([{:system, "$i"} | rest]), do: {mk_type(:i), rest}
+  defp parse_atomic_type([{:system, "$o"} | rest]), do: {mk_type(:o), rest}
+  defp parse_atomic_type([{:lparen, _} | rest]) do
+    {type, [{:rparen, _} | rest2]} = parse_type(rest)
+    {type, rest2}
+  end
+
+  # --- Atomics ---
+
+  defp parse_atomic([{:lparen, _} | rest], ctx) do
+    {term, [{:rparen, _} | rest2]} = parse_formula(rest, ctx)
+    {term, rest2}
+  end
+
+  defp parse_atomic([{:var, name} | rest], ctx) do
+    # Check context for variable type
+    case Context.get_type(ctx, name) do
+      nil -> raise "Variable #{name} used without type declaration or quantifier binding"
+      type -> {mk_term(mk_free_var(name, type)), rest}
+    end
+  end
+
+  defp parse_atomic([{:atom, name} | rest], ctx) do
+    # In a full system, you would look up the constant's type in ctx.consts
+    # For now, we might fail or assume a type (which is dangerous in HOL).
+    # Assuming the user pre-populates context with constants:
+    case Context.get_type(ctx, name) do
+      nil -> raise "Constant #{name} unknown"
+      type -> {mk_term(mk_const(name, type)), rest}
+    end
+  end
+end
+```
+
+```elixir
+input = "! [F: $i > $i, G: $i > $i]: ( ! [X: $i]: (F @ X) = (G @ X) ) => (F = G)"
+
+IO.puts("--- 1. Input String ---")
+IO.puts(input)
+
+IO.puts("\n--- 2. Tokens ---")
+{:ok, tokens, "", _, _, _} = TH0Parser.Tokenizer.tokenize(input)
+IO.inspect(tokens, label: "Token List")
+
+IO.puts("\n--- 3. Parsed HOL Term ---")
+term = TH0Parser.Parser.parse(tokens)
+IO.puts(PrettyPrint.pp_term(term))
+```
+
+```elixir
+input = "! [X:$i]: X = X"
+
+IO.puts("--- 1. Input String ---")
+IO.puts(input)
+
+IO.puts("\n--- 2. Tokens ---")
+{:ok, tokens, "", _, _, _} = TH0Parser.Tokenizer.tokenize(input)
+IO.inspect(tokens, label: "Token List")
+
+IO.puts("\n--- 3. Parsed HOL Term ---")
+term = TH0Parser.Parser.parse(tokens)
+IO.puts(PrettyPrint.pp_term(term))
+```

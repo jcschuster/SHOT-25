@@ -68,6 +68,10 @@ implies_term    = mk_term(implies_const)
 equivalent_term = mk_term(equivalent_const)
 ```
 
+```elixir
+neg_term
+```
+
 ## Utility functions
 
 ```elixir
@@ -285,12 +289,16 @@ defmodule Tableaux do
   @unification_depth 8
 
   @debug true
+  @to_file false
 
   defp debug_print(msg) do
     if @debug do
-      log(msg)
+      if @to_file do
+        log(msg)
+      else
+        IO.puts(msg)
+      end
     end
-      #IO.puts(msg)
   end
   
   def sat(formulas) when is_list(formulas) do
@@ -448,7 +456,7 @@ defmodule Tableaux do
           _ ->
             # Try checkpoints on right branch and propagate up
             # TODO: We only need to close one or-branch, so reduce_while should be used
-            {new_checkpoints, last_open} = Enum.reduce(unif_checkpoints, {[], nil},
+            {new_checkpoints, last_open} = Enum.reduce_while(unif_checkpoints, {[], nil},
             fn {:unif_checkpoint, substitutions, remaining}, {checkpoints, prev_open} ->
               new_rest = apply_subst(substitutions, rest)
               new_clause = apply_subst(substitutions, clause)
@@ -466,15 +474,18 @@ defmodule Tableaux do
                     fn {:unif_checkpoint, new_substs, new_remaining} ->
                       {:unif_checkpoint, substitutions ++ new_substs, new_remaining}
                     end)
-                  {combined_checkpoints, prev_open}
+                  {:halt, {combined_checkpoints, prev_open}}
 
                 {:open, right_clause, right_constraints} ->
-                  {checkpoints, {:open, right_clause, right_constraints}}
+                  {:cont, {checkpoints, {:open, right_clause, right_constraints}}}
                 
                 other ->
                   case prev_open do
-                    nil -> {checkpoints, other}
-                    _ -> {checkpoints, prev_open} # don't overwrite :open branches with :incomplete
+                    nil ->
+                      {:cont, {checkpoints, other}}
+                    _ ->
+                      # don't overwrite :open branches with :incomplete
+                      {:cont, {checkpoints, prev_open}}
                   end
               end
             end)
@@ -861,7 +872,7 @@ PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-#Tableaux.prove formula
+Tableaux.prove formula
 ```
 
 ```elixir
@@ -927,7 +938,7 @@ PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-#Tableaux.prove formula
+Tableaux.prove formula
 ```
 
 $$\exists P. (P a) \supset (p b)$$
@@ -1049,7 +1060,7 @@ PrettyPrint.pp_term formula
 ```
 
 ```elixir
-#Tableaux.prove formula
+Tableaux.prove formula
 ```
 
 ## Notions of Leibnitz Equality
@@ -1144,14 +1155,54 @@ PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-#Tableaux.prove formula
+Tableaux.prove formula
 ```
 
 ## Andrews equality
 
 $\dot=^\alpha \coloneqq \lambda X_\alpha. \lambda Y_\alpha. \forall Q_{o\alpha\alpha} (\forall Z_\alpha. Q_{o\alpha\alpha} Z_\alpha Z_\alpha) \supset (Q_{o\alpha\alpha} X_\alpha Y_\alpha)$
 
-## Surjective Cantor Theorem -> provable but not satisfiable
+<!-- livebook:{"break_markdown":true} -->
+
+$\equiv (\Pi_{oo(o\iota\iota)}(\lambda Q_{o\iota\iota}. \supset (\Pi_{oo\iota}(\lambda Z_\iota. Q_{o\iota\iota} Z_\iota Z_\iota)) (Q_{o\iota\iota} X_\iota Y_\iota))) ~ (\Pi_{oo(o\iota)}(\lambda P_{o\iota}. \supset (P_{o\iota} X_\iota) (P_{o\iota} Y_\iota)))$
+
+```elixir
+x = mk_free_var_term("X", type_i)
+y = mk_free_var_term("Y", type_i)
+
+p = mk_free_var("P", type_io)
+q = mk_free_var("Q", type_iio)
+z = mk_free_var("Z", type_i)
+
+pi_iio = Util.mk_pi_const(type_iio_o) |> mk_term()
+pi_io = Util.mk_pi_const(type_io_o) |> mk_term()
+pi_i = Util.mk_pi_const(type_io) |> mk_term()
+
+q_z_z = mk_term(q) |> mk_appl_term(mk_term(z)) |> mk_appl_term(mk_term(z))
+q_x_y = mk_term(q) |> mk_appl_term(x) |> mk_appl_term(y)
+lambda_z_q_z_z = mk_abstr_term(q_z_z, z)
+pi_lambda_z_q_z_z = mk_appl_term(pi_i, lambda_z_q_z_z)
+imp_q = implies_term |> mk_appl_term(pi_lambda_z_q_z_z) |> mk_appl_term(q_x_y)
+lambda_q_imp_q = mk_abstr_term(imp_q, q)
+andrews_eq = mk_appl_term(pi_iio, lambda_q_imp_q)
+
+
+p_x = mk_term(p) |> mk_appl_term(x)
+p_y = mk_term(p) |> mk_appl_term(y)
+imp_p = implies_term |> mk_appl_term(p_x) |> mk_appl_term(p_y)
+lambda_p_imp_p = mk_abstr_term(imp_p, p)
+leibnitz_eq = mk_appl_term(pi_io, lambda_p_imp_p)
+
+formula = equivalent_term |> mk_appl_term(andrews_eq) |> mk_appl_term(leibnitz_eq)
+
+PrettyPrint.pp_term(formula)
+```
+
+```elixir
+Tableaux.prove formula
+```
+
+## Surjective Cantor Theorem
 
 $$\neg \exists F. \forall Y. \exists X. (F X) = Y$$
 
@@ -1194,22 +1245,8 @@ surj_cantor = mk_appl_term(neg_term, outer_sigma)
 PrettyPrint.pp_term(surj_cantor)
 ```
 
-Theorem is not satisfiable by prover
-
-```elixir
-Tableaux.sat surj_cantor
-```
-
-Theorem is provable though
-
 ```elixir
 Tableaux.prove surj_cantor
-```
-
-...this makes the negation of the theorem provable
-
-```elixir
-neg_term |> mk_appl_term(surj_cantor) |> Tableaux.prove
 ```
 
 ## Appendix A: Cantor - Example by Hand (Lecture 16.7.25)
