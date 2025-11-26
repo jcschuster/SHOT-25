@@ -1,7 +1,10 @@
 # Debug
 
 ```elixir
-Mix.install([{:hol, "1.0.2"}])
+Mix.install([
+  {:hol, "1.0.2"},
+  {:thou, path: Path.join(__DIR__, "..")}
+])
 ```
 
 ## Setup
@@ -13,6 +16,7 @@ import HOL.Unification
 import HOL.Substitution
 import PrettyPrint
 import TPTPParser
+import THOU.HOL.Definitions
 
 LoggerHelper.set_logger_warning()
 ```
