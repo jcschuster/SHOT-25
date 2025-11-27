@@ -612,37 +612,12 @@ defmodule THOU.Prover do
   defp as_assignment({:open, clause, constraints}) do
     "Some branches still open -> countermodel exists" |> Logger.debug()
 
-    Enum.reduce(clause, "[", fn v, str ->
-      str <>
-        case String.length(str) do
-          1 -> ""
-          _ -> ", "
-        end <>
-        case v do
-          negated(u) -> "{#{PrettyPrint.pp_term(u)} ← false}"
-          _ -> "{#{PrettyPrint.pp_term(v)} ← true}"
-        end
-    end) <>
-      "] || " <>
-      pp_constraints(constraints)
+    pp_assignment(clause) <> " || " <> pp_constraints(constraints)
   end
 
   defp as_assignment({:incomplete, clause, constraints}) do
     "Result unknown due to prover incompleteness" |> Logger.debug()
 
-    {:unknown,
-     Enum.reduce(clause, "[", fn v, str ->
-       str <>
-         case String.length(str) do
-           1 -> ""
-           _ -> ", "
-         end <>
-         case v do
-           negated(u) -> "{#{PrettyPrint.pp_term(u)} ← false}"
-           _ -> "{#{PrettyPrint.pp_term(v)} ← true}"
-         end
-     end) <>
-       "] || " <>
-       pp_constraints(constraints)}
+    {:unknown, pp_assignment(clause) <> " || " <> pp_constraints(constraints)}
   end
 end

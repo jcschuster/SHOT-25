@@ -3,6 +3,7 @@ defmodule THOU.Util do
   import HOL.Terms
   import HOL.Substitution
   import THOU.HOL.Definitions
+  import THOU.HOL.Patterns
 
   def mk_new_skolem_term(fvars, type() = return_type) do
     skolem_const =
@@ -17,8 +18,6 @@ defmodule THOU.Util do
       mk_appl_term(acc, fvar_term)
     end)
   end
-
-  def mk_new_free_var(type() = type), do: mk_uniqe_var(type)
 
   def constant?(hol_term() = term) do
     case term do
@@ -93,16 +92,19 @@ defmodule THOU.Util do
     false
   end
 
+  def pp_assignment(clause) when is_map(clause) do
+    pretty_assignments =
+      Enum.map(clause, &"#{PrettyPrint.pp_term(&1)} ← #{!match?(negated(_), &1)}")
+
+    "[" <> Enum.join(pretty_assignments, ", ") <> "]"
+  end
+
   def pp_constraints(constraints) when is_list(constraints) do
-    Enum.reduce(constraints, "[", fn {t1, t2}, str ->
-      str <>
-        case String.length(str) do
-          1 -> ""
-          _ -> ", "
-        end <>
-        PrettyPrint.pp_term(t1) <>
-        " = " <>
-        PrettyPrint.pp_term(t2)
-    end) <> "]"
+    pretty_constraints =
+      Enum.map(constraints, fn {t1, t2} ->
+        "#{PrettyPrint.pp_term(t1)} = #{PrettyPrint.pp_term(t2)}"
+      end)
+
+    "[" <> Enum.join(pretty_constraints, ", ") <> "]"
   end
 end
