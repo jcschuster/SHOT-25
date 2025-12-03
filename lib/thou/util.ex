@@ -5,6 +5,15 @@ defmodule THOU.Util do
   import THOU.HOL.Definitions
   import THOU.HOL.Patterns
 
+  def mk_new_unknown_type(),
+    do: mk_type(:"unknown_#{System.unique_integer([:positive, :monotonic])}")
+
+  def unknown_type?(type(goal: g)) do
+    is_atom(g) and String.starts_with?(Atom.to_string(g), "unknown_")
+  end
+
+  def unknown_type?(_), do: false
+
   def mk_new_skolem_term(fvars, type() = return_type) do
     skolem_const =
       mk_const(
@@ -21,11 +30,11 @@ defmodule THOU.Util do
 
   def constant?(hol_term() = term) do
     case term do
-      hol_term(bvars: [], head: neg_const(), args: [body]) ->
+      negated(body) ->
         constant?(body)
 
-      hol_term(bvars: [], head: declaration(kind: :co)) ->
-        true
+      hol_term(bvars: bvars, head: declaration(kind: :co), args: args) ->
+        Enum.all?(args, &(get_head(&1) in bvars))
 
       _ ->
         false
@@ -34,15 +43,30 @@ defmodule THOU.Util do
 
   def variable?(hol_term() = term) do
     case term do
-      hol_term(bvars: [], head: neg_const(), args: [body]) ->
+      negated(body) ->
         variable?(body)
 
-      hol_term(bvars: [], head: declaration(kind: :fv)) ->
-        true
+      hol_term(bvars: bvars, head: declaration(kind: :fv), args: args) ->
+        Enum.all?(args, &(get_head(&1) in bvars))
 
       _ ->
         false
     end
+  end
+
+  def atomic_term?(hol_term(bvars: [], args: args)), do: args == []
+
+  def atomic_term?(hol_term(bvars: bvars, args: args)) do
+    Enum.all?(args, fn arg -> atomic_term?(arg) && Enum.any?(bvars, &(&1 == get_head(arg))) end)
+  end
+
+  def is_appl_term?(hol_term(bvars: bvars, args: args)) do
+    # All arguments are atomic terms,
+    # all bound variables appear exactly once as term in argument list
+    # and there is at least one argument that is not a bound variable
+    Enum.all?(args, &atomic_term?/1) &&
+      Enum.all?(bvars, fn bvar -> Enum.any?(args, &match?(hol_term(head: ^bvar), &1)) end) &&
+      Enum.any?(args, fn arg -> !Enum.any?(bvars, &match?(hol_term(head: &1), arg)) end)
   end
 
   def syn_negate(clause) when is_map(clause) or is_list(clause) do

@@ -407,6 +407,10 @@ PrettyPrint.pp_term(surj_cantor)
 prove surj_cantor
 ```
 
+```elixir
+prove(parse "(=) = (=)")
+```
+
 ## Appendix A: Cantor - Example by Hand (Lecture 16.7.25)
 
 __Notation:__

@@ -2,6 +2,7 @@ defmodule THOU.Parser.Parser do
   import HOL.Data
   import HOL.Terms
   import THOU.HOL.Definitions
+  import THOU.Util
   import THOU.Parser.Tokenizer
 
   # Context struct to track variable types and declared constants
@@ -54,7 +55,7 @@ defmodule THOU.Parser.Parser do
     {term, rest2}
   end
 
-  defp parse_formula_op(lhs, [{:rev_implies, _} | rest], ctx) do
+  defp parse_formula_op(lhs, [{:implied_by, _} | rest], ctx) do
     # Desugar: A <= B  becomes  B => A
     {rhs, rest2} = parse_formula(rest, ctx)
     # Note order: implies @ rhs @ lhs
@@ -127,6 +128,12 @@ defmodule THOU.Parser.Parser do
   defp parse_unitary([{:exists, _} | rest], ctx), do: parse_quantifier(:sigma, rest, ctx)
   defp parse_unitary([{:lambda, _} | rest], ctx), do: parse_lambda(rest, ctx)
 
+  defp parse_unitary([{:pi, _} | [{:lparen, _}, {:lambda, _} | _] = rest], ctx),
+    do: parse_quantifier(:sigma, rest, ctx)
+
+  defp parse_unitary([{:sigma, _} | [{:lparen, _}, {:lambda, _} | _] = rest], ctx),
+    do: parse_quantifier(:sigma, rest, ctx)
+
   defp parse_unitary(tokens, ctx) do
     parse_equality(tokens, ctx)
   end
@@ -141,7 +148,6 @@ defmodule THOU.Parser.Parser do
 
         lhs_type = get_term_type(lhs)
 
-        # Construct specific equality constant for this type
         eq_const_decl = equals_const(lhs_type)
         eq_term = mk_term(eq_const_decl)
 
@@ -183,39 +189,20 @@ defmodule THOU.Parser.Parser do
   defp parse_quantifier(type_key, [{:lbracket, _} | rest], ctx) do
     {vars, [{:rbracket, _}, {:colon, _} | body_tokens]} = parse_typed_vars(rest, [])
 
-    # We must process variables from right to left to nest them correctly
-    # ! [X, Y]: P  becomes  Pi \X. (Pi \Y. P)
-    # So we parse P first with the full context, then wrap outwards.
-
-    # 1. Update Context with ALL new variables
     inner_ctx =
       Enum.reduce(vars, ctx, fn {name, type}, acc ->
         Context.put_var(acc, name, type)
       end)
 
-    # 2. Parse Body
     {body_term, rest_tokens} = parse_formula(body_tokens, inner_ctx)
-
-    # 3. Desugar backwards (fold_right behavior)
-    # vars is [X, Y]. We want Pi X (Pi Y P).
-    # List is currently [{X, Tx}, {Y, Ty}].
-    # We define a helper to wrap one layer.
 
     term =
       vars
       |> Enum.reverse()
       |> Enum.reduce(body_term, fn {name, var_type}, acc_term ->
-        # Create Abstraction: \Var. Acc
-        # We need the free variable term to abstract over
         var_const = mk_free_var(name, var_type)
         abs_term = mk_abstr_term(acc_term, var_const)
 
-        # Create Quantifier: Pi or Sigma
-        # WARNING: pi_const takes the SET TYPE (domain -> bool)
-        # The type of our abstraction `abs_term` IS `var_type -> bool`.
-        # So we construct the quantifier constant for this predicate.
-
-        # Get type of the predicate (the abstraction we just built)
         pred_type = get_term_type(abs_term)
 
         quant_const_decl =
@@ -226,11 +213,36 @@ defmodule THOU.Parser.Parser do
 
         quant_term = mk_term(quant_const_decl)
 
-        # Apply Quantifier to Abstraction
         mk_appl_term(quant_term, abs_term)
       end)
 
     {term, rest_tokens}
+  end
+
+  defp parse_quantifier(type_key, [{:lparen, _}, {:lambda, _} | rest], ctx) do
+    {abs_term, rest_after_lambda} = parse_lambda(rest, ctx)
+
+    case rest_after_lambda do
+      [{:rparen, _} | final_tokens] ->
+        pred_type = get_term_type(abs_term)
+
+        quant_const_decl =
+          case type_key do
+            :pi -> pi_const(pred_type)
+            :sigma -> sigma_const(pred_type)
+          end
+
+        quant_term = mk_term(quant_const_decl)
+        term = mk_appl_term(quant_term, abs_term)
+
+        {term, final_tokens}
+
+      [{type, val} | _] ->
+        raise "Syntax Error: Expected closing parenthesis ')' after quantified lambda, found '#{val}' (#{inspect(type)})."
+
+      [] ->
+        raise "Syntax Error: Unexpected end of input inside quantified lambda."
+    end
   end
 
   # Handles ^ [X:Type]: Body
@@ -244,7 +256,6 @@ defmodule THOU.Parser.Parser do
 
     {body_term, rest_tokens} = parse_formula(body_tokens, inner_ctx)
 
-    # Wrap logic for Lambda is simpler: just mk_abstr_term
     term =
       vars
       |> Enum.reverse()
@@ -275,15 +286,7 @@ defmodule THOU.Parser.Parser do
 
     case rest do
       [{:arrow, _} | rest2] ->
-        # Right associative: A > B > C is A > (B > C)
         {rhs, rest3} = parse_type(rest2)
-        # Construct function type: mk_type(:o, [arg]) maps to "arg > o"?
-        # Wait, the prompt provided specific definitions in tableaux_hol.livemd:
-        # type_io = mk_type(type_o, [type_i]) means i -> o.
-        # mk_type(return_type, [arg_types]) [cite: 1]
-
-        # So A > B means a function taking A returning B.
-        # Construct: mk_type(rhs, [lhs])
         type = mk_type(rhs, [lhs])
         {type, rest3}
 
@@ -308,7 +311,6 @@ defmodule THOU.Parser.Parser do
   end
 
   defp parse_atomic([{:var, name} | rest], ctx) do
-    # Check context for variable type
     case Context.get_type(ctx, name) do
       nil -> raise "Variable #{name} used without type declaration or quantifier binding"
       type -> {mk_term(mk_free_var(name, type)), rest}
@@ -316,13 +318,70 @@ defmodule THOU.Parser.Parser do
   end
 
   defp parse_atomic([{:atom, name} | rest], ctx) do
-    # In a full system, you would look up the constant's type in ctx.consts
-    # For now, we might fail or assume a type (which is dangerous in HOL).
-    # Assuming the user pre-populates context with constants:
     case Context.get_type(ctx, name) do
       nil -> raise "Constant #{name} unknown"
       type -> {mk_term(mk_const(name, type)), rest}
     end
+  end
+
+  defp parse_atomic([{:system, "$true"} | rest], _ctx) do
+    {true_term(), rest}
+  end
+
+  defp parse_atomic([{:system, "$false"} | rest], _ctx) do
+    {false_term(), rest}
+  end
+
+  defp parse_atomic([{:equiv, _} | rest], _ctx) do
+    {equivalent_term(), rest}
+  end
+
+  defp parse_atomic([{:implies, _} | rest], _ctx) do
+    {implies_term(), rest}
+  end
+
+  defp parse_atomic([{:implied_by, _} | rest], _ctx) do
+    {implied_by_term(), rest}
+  end
+
+  defp parse_atomic([{:xor, _} | rest], _ctx) do
+    {xor_term(), rest}
+  end
+
+  defp parse_atomic([{:nor, _} | rest], _ctx) do
+    {nor_term(), rest}
+  end
+
+  defp parse_atomic([{:nand, _} | rest], _ctx) do
+    {nand_term(), rest}
+  end
+
+  defp parse_atomic([{:pi, _} | rest], _ctx) do
+    {mk_term(pi_const(mk_type(:o, [mk_new_unknown_type()]))), rest}
+  end
+
+  defp parse_atomic([{:sigma, _} | rest], _ctx) do
+    {mk_term(sigma_const(mk_type(:o, [mk_new_unknown_type()]))), rest}
+  end
+
+  defp parse_atomic([{:not, _} | rest], _ctx) do
+    {neg_term(), rest}
+  end
+
+  defp parse_atomic([{:or, _} | rest], _ctx) do
+    {or_term(), rest}
+  end
+
+  defp parse_atomic([{:and, _} | rest], _ctx) do
+    {and_term(), rest}
+  end
+
+  defp parse_atomic([{:neq, _} | rest], _ctx) do
+    {not_equals_term(mk_new_unknown_type()), rest}
+  end
+
+  defp parse_atomic([{:eq, _} | rest], _ctx) do
+    {equals_term(mk_new_unknown_type()), rest}
   end
 
   defp parse_atomic([token | _rest], _ctx) do

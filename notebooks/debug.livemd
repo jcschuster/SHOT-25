@@ -17,8 +17,15 @@ import HOL.Substitution
 import PrettyPrint
 import TPTPParser
 import THOU.HOL.Definitions
+import THOU.TermOrder.TypeOrder
+import THOU.Parser.Parser
+alias THOU.Parser.Parser.Context
 
 LoggerHelper.set_logger_warning()
+```
+
+```elixir
+parse("= @ =")
 ```
 
 ## Types, Constants, Terms

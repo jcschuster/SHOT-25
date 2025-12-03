@@ -228,6 +228,18 @@ defmodule THOU.Prover do
         {:open, clause, constraints}
 
       #################################################################################
+      # BOOLEAN CONSTANTS
+      #################################################################################
+
+      [true_term() | rest] ->
+        Logger.debug("top constant")
+        tableaux(rest, max_inst, clause, constraints, instantiation_count, incomplete?)
+
+      [false_term() | _rest] ->
+        Logger.debug("bottom constant -> branch stays open")
+        {:open, clause, constraints}
+
+      #################################################################################
       # ATOMS
       #################################################################################
 
@@ -330,46 +342,100 @@ defmodule THOU.Prover do
         neg_eq = neg_term() |> mk_appl_term(eq)
         tableaux([neg_eq | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
 
-      # equality (type i) -> Leibnitz equality
-      [hol_term(head: equals_const(type_i()), args: [hol_term() = a, hol_term() = b]) | rest] ->
-        Logger.debug("equality i")
-        p = mk_uniqe_var(type_io())
-        p_term = mk_term(p)
-        p_a = mk_appl_term(p_term, a)
-        p_b = mk_appl_term(p_term, b)
-        pi = pi_const(type_io_o()) |> mk_term()
-
-        inner_equiv = equivalent_term() |> mk_appl_term(p_a) |> mk_appl_term(p_b)
-        abstr = inner_equiv |> mk_abstr_term(p)
-        quant = pi |> mk_appl_term(abstr)
-
-        tableaux([quant | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
-
-      # negated equality (type i) -> negated Leibnitz equality
+      # equality (other atomic types) -> Leibnitz equality
       [
-        negated(hol_term(head: equals_const(type_i()), args: [hol_term() = a, hol_term() = b]))
+        hol_term(
+          head: equals_const(type(goal: g, args: [])),
+          args: [hol_term() = a, hol_term() = b]
+        ) = formula
         | rest
-      ] ->
-        Logger.debug("negated equality i")
-        p = mk_uniqe_var(type_io())
-        p_term = mk_term(p)
-        p_a = mk_appl_term(p_term, a)
-        p_b = mk_appl_term(p_term, b)
-        pi = pi_const(type_io_o()) |> mk_term()
+      ]
+      when is_atom(g) ->
+        t = type(goal: g, args: [])
 
-        inner_equiv = equivalent_term() |> mk_appl_term(p_a) |> mk_appl_term(p_b)
-        abstr = inner_equiv |> mk_abstr_term(p)
-        quant = pi |> mk_appl_term(abstr)
-        neg_quant = neg_term() |> mk_appl_term(quant)
+        if unknown_type?(t) do
+          Logger.debug("equality unknown type (treated as atom)")
 
-        tableaux(
-          [neg_quant | rest],
-          max_inst,
-          clause,
-          constraints,
-          instantiation_count,
-          incomplete?
-        )
+          handle_atom(
+            formula,
+            :pos,
+            clause,
+            rest,
+            constraints,
+            max_inst,
+            instantiation_count,
+            incomplete?
+          )
+        else
+          Logger.debug("equality other atomic types")
+          p = mk_uniqe_var(mk_type(:o, [t]))
+          p_term = mk_term(p)
+          p_a = mk_appl_term(p_term, a)
+          p_b = mk_appl_term(p_term, b)
+          pi = pi_const(mk_type(:o, [mk_type(:o, [t])])) |> mk_term()
+
+          inner_equiv = equivalent_term() |> mk_appl_term(p_a) |> mk_appl_term(p_b)
+          abstr = inner_equiv |> mk_abstr_term(p)
+          quant = pi |> mk_appl_term(abstr)
+
+          tableaux(
+            [quant | rest],
+            max_inst,
+            clause,
+            constraints,
+            instantiation_count,
+            incomplete?
+          )
+        end
+
+      # negated equality (other atomic types) -> negated Leibnitz equality
+      [
+        negated(
+          hol_term(
+            head: equals_const(type(goal: g, args: [])),
+            args: [hol_term() = a, hol_term() = b]
+          )
+        ) = formula
+        | rest
+      ]
+      when is_atom(g) ->
+        t = type(goal: g, args: [])
+
+        if unknown_type?(t) do
+          Logger.debug("negated equality unknown type (treated as atom)")
+
+          handle_atom(
+            formula,
+            :neg,
+            clause,
+            rest,
+            constraints,
+            max_inst,
+            instantiation_count,
+            incomplete?
+          )
+        else
+          Logger.debug("negated equality other atomic types")
+          p = mk_uniqe_var(mk_type(:o, [t]))
+          p_term = mk_term(p)
+          p_a = mk_appl_term(p_term, a)
+          p_b = mk_appl_term(p_term, b)
+          pi = pi_const(mk_type(:o, [mk_type(:o, [t])])) |> mk_term()
+
+          inner_equiv = equivalent_term() |> mk_appl_term(p_a) |> mk_appl_term(p_b)
+          abstr = inner_equiv |> mk_abstr_term(p)
+          quant = pi |> mk_appl_term(abstr)
+          neg_quant = neg_term() |> mk_appl_term(quant)
+
+          tableaux(
+            [neg_quant | rest],
+            max_inst,
+            clause,
+            constraints,
+            instantiation_count,
+            incomplete?
+          )
+        end
 
       # equality (function types) -> functional extensionality
       [hol_term(head: equals_const(type), args: [hol_term() = a, hol_term() = b]) | rest] ->

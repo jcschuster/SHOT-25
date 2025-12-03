@@ -34,13 +34,15 @@ defmodule THOU.Parser.Tokenizer do
       # Connectives
       string("<=>") |> replace({:equiv, "<=>"}),
       string("=>") |> replace({:implies, "=>"}),
-      string("<=") |> replace({:rev_implies, "<="}),
+      string("<=") |> replace({:implied_by, "<="}),
       string("<~>") |> replace({:xor, "<~>"}),
       string("~|") |> replace({:nor, "~|"}),
       string("~&") |> replace({:nand, "~&"}),
 
       # Quantifiers and Operators
+      string("!!") |> replace({:pi, "!!"}),
       string("!") |> replace({:forall, "!"}),
+      string("??") |> replace({:sigma, "??"}),
       string("?") |> replace({:exists, "?"}),
       string("^") |> replace({:lambda, "^"}),
       string("@") |> replace({:app, "@"}),
