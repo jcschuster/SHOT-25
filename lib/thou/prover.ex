@@ -106,6 +106,7 @@ defmodule THOU.Prover do
     end
   end
 
+  # Which branch to check first? -> Introduce Term Orderings and Heuristics
   defp branch(a, b, rest, clause, constraints, max_inst, instantiation_count, incomplete?) do
     left_side = List.flatten([a])
     right_side = List.flatten([b])
