@@ -17,6 +17,8 @@ import HOL.Substitution
 import PrettyPrint
 import TPTPParser
 import THOU.HOL.Definitions
+import THOU.HOL.Patterns
+import THOU.Prover
 import THOU.TermOrder.TypeOrder
 import THOU.Parser.Parser
 alias THOU.Parser.Parser.Context
@@ -25,7 +27,12 @@ LoggerHelper.set_logger_warning()
 ```
 
 ```elixir
-parse("= @ =")
+ctx = Context.new()
+      |> Context.put_const("p", mk_type(:o, [mk_type(:o)]))
+      |> Context.put_const("a", mk_type(:o))
+      |> Context.put_const("b", mk_type(:o))
+
+parse("( p @ ( a & b ) ) = ( p @ ( b & a ) )", ctx) |> prove
 ```
 
 ## Types, Constants, Terms

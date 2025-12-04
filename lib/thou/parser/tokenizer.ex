@@ -41,6 +41,7 @@ defmodule THOU.Parser.Tokenizer do
 
       # Quantifiers and Operators
       string("!!") |> replace({:pi, "!!"}),
+      string("!=") |> replace({:neq, "!="}),
       string("!") |> replace({:forall, "!"}),
       string("??") |> replace({:sigma, "??"}),
       string("?") |> replace({:exists, "?"}),
@@ -49,7 +50,6 @@ defmodule THOU.Parser.Tokenizer do
       string("~") |> replace({:not, "~"}),
       string("|") |> replace({:or, "|"}),
       string("&") |> replace({:and, "&"}),
-      string("!=") |> replace({:neq, "!="}),
       string("=") |> replace({:eq, "="}),
 
       # Punctuation

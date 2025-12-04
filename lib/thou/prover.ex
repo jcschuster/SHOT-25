@@ -157,8 +157,10 @@ defmodule THOU.Prover do
                        incomplete?
                      ) do
                   {:closed, new_cpts} ->
-                    combined_checkpoints =
-                      checkpoints ++
+                    added_cpts =
+                      if new_cpts == [] do
+                        [{:unif_checkpoint, substitutions, remaining}]
+                      else
                         Enum.map(
                           new_cpts,
                           fn {:unif_checkpoint, new_substs, new_remaining} ->
@@ -166,6 +168,9 @@ defmodule THOU.Prover do
                             {:unif_checkpoint, updated_substitutions ++ new_substs, new_remaining}
                           end
                         )
+                      end
+
+                    combined_checkpoints = checkpoints ++ added_cpts
 
                     {:halt, {combined_checkpoints, prev_open}}
 
@@ -208,8 +213,10 @@ defmodule THOU.Prover do
     else
       [formula | rest] = formulas
       "\nProcessing formula #{PrettyPrint.pp_term(formula)}" |> Logger.debug()
-      Enum.map(rest, &PrettyPrint.pp_term/1) |> inspect(label: "Rest") |> Logger.debug()
-      Enum.map(clause, &PrettyPrint.pp_term/1) |> inspect(label: "Clause") |> Logger.debug()
+      rest_pp = Enum.map(rest, &PrettyPrint.pp_term/1) |> inspect()
+      ("Rest: " <> rest_pp) |> Logger.debug()
+      clause_pp = Enum.map(clause, &PrettyPrint.pp_term/1) |> inspect()
+      ("Clause: " <> clause_pp) |> Logger.debug()
 
       if get_term_type(formula) != type_o() do
         IO.puts("All formulas must be of type bool")
@@ -235,9 +242,17 @@ defmodule THOU.Prover do
         Logger.debug("top constant")
         tableaux(rest, max_inst, clause, constraints, instantiation_count, incomplete?)
 
+      [negated(true_term()) | _rest] ->
+        Logger.debug("negated top constant -> branch closed")
+        {:closed, []}
+
       [false_term() | _rest] ->
-        Logger.debug("bottom constant -> branch stays open")
-        {:open, clause, constraints}
+        Logger.debug("bottom constant -> branch closed")
+        {:closed, []}
+
+      [negated(false_term()) | rest] ->
+        Logger.debug("negated bottom constant")
+        tableaux(rest, max_inst, clause, constraints, instantiation_count, incomplete?)
 
       #################################################################################
       # ATOMS
@@ -318,13 +333,143 @@ defmodule THOU.Prover do
       # EQUALITY
       #################################################################################
 
+      ################################## REFLEXIVITY ##################################
+
       # reflexivity of equality -> a=a is always true
       [hol_term(head: any_equals_const(), args: [a, a]) | rest] ->
+        Logger.debug("reflexivity of equality")
         tableaux(rest, max_inst, clause, constraints, instantiation_count, incomplete?)
 
       # negated equality -> ¬(a=a) is always false
       [negated(hol_term(head: any_equals_const(), args: [a, a])) | _rest] ->
+        Logger.debug("irreflexivity of inequality")
         {:closed, []}
+
+      ################################# EXTENSIONALITY ################################
+
+      [
+        hol_term(
+          head: any_equals_const(),
+          args: [
+            hol_term(bvars: [], head: declaration(name: n) = h, args: args1, type: t),
+            hol_term(bvars: [], head: h, args: args2, type: t)
+          ]
+        )
+        | rest
+      ]
+      when n not in signature_symbols() ->
+        subproblems =
+          Enum.zip(args1, args2)
+          |> Enum.map(fn {t1, t2} ->
+            get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
+          end)
+          |> Enum.reduce(true_term(), fn t, acc ->
+            and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
+          end)
+
+        tableaux(
+          [subproblems | rest],
+          max_inst,
+          clause,
+          constraints,
+          instantiation_count,
+          incomplete?
+        )
+
+      [
+        hol_term(
+          head: any_equals_const(),
+          args: [
+            hol_term(bvars: [], head: hol_term() = h, args: args1, type: t),
+            hol_term(bvars: [], head: h, args: args2, type: t)
+          ]
+        )
+        | rest
+      ] ->
+        subproblems =
+          Enum.zip(args1, args2)
+          |> Enum.map(fn {t1, t2} ->
+            get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
+          end)
+          |> Enum.reduce(true_term(), fn t, acc ->
+            and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
+          end)
+
+        tableaux(
+          [subproblems | rest],
+          max_inst,
+          clause,
+          constraints,
+          instantiation_count,
+          incomplete?
+        )
+
+      [
+        negated(
+          hol_term(
+            head: any_equals_const(),
+            args: [
+              hol_term(bvars: [], head: hol_term() = h, args: args1, type: t),
+              hol_term(bvars: [], head: h, args: args2, type: t)
+            ]
+          )
+        )
+        | rest
+      ] ->
+        inner_subproblems =
+          Enum.zip(args1, args2)
+          |> Enum.map(fn {t1, t2} ->
+            get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
+          end)
+          |> Enum.reduce(true_term(), fn t, acc ->
+            and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
+          end)
+
+        subproblems = mk_appl_term(neg_term(), inner_subproblems)
+
+        tableaux(
+          [subproblems | rest],
+          max_inst,
+          clause,
+          constraints,
+          instantiation_count,
+          incomplete?
+        )
+
+      [
+        negated(
+          hol_term(
+            head: any_equals_const(),
+            args: [
+              hol_term(bvars: [], head: declaration(name: n) = h, args: args1, type: t),
+              hol_term(bvars: [], head: h, args: args2, type: t)
+            ]
+          )
+        )
+        | rest
+      ]
+      when n not in signature_symbols() ->
+        inner_subproblems =
+          Enum.zip(args1, args2)
+          |> Enum.map(fn {t1, t2} ->
+            get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
+          end)
+          |> Enum.reduce(true_term(), fn t, acc ->
+            and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
+          end)
+
+        subproblems = mk_appl_term(neg_term(), inner_subproblems)
+
+        tableaux(
+          [subproblems | rest],
+          max_inst,
+          clause,
+          constraints,
+          instantiation_count,
+          incomplete?
+        )
+
+      ############################# TYPED EQUALITY SYMBOLS ############################
 
       # equality (type o) -> transform to equivalence
       [hol_term(head: equals_const(type_o()), args: [hol_term() = a, hol_term() = b]) | rest] ->

@@ -202,7 +202,7 @@ defmodule THOU.HOL.Definitions do
           )
         ],
         type: type(goal: :o, args: [unquote(t), unquote(t)]),
-        fvars: 0,
+        fvars: [],
         max_num: 2
       )
     end
@@ -226,7 +226,7 @@ defmodule THOU.HOL.Definitions do
           )
         ],
         type: type(goal: :o, args: [unquote(t)]),
-        fvars: 0,
+        fvars: [],
         max_num: 1
       )
     end
@@ -250,7 +250,7 @@ defmodule THOU.HOL.Definitions do
           )
         ],
         type: type(goal: :o, args: [unquote(t)]),
-        fvars: 0,
+        fvars: [],
         max_num: 1
       )
     end
@@ -449,7 +449,7 @@ defmodule THOU.HOL.Definitions do
             ],
             type: type(goal: :o, args: [unquote(t), unquote(t)]),
             fvars: [],
-            max_num: []
+            max_num: 0
           )
         ],
         type: type(goal: :o, args: [unquote(t), unquote(t)]),
