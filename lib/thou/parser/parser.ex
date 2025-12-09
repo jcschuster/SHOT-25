@@ -54,7 +54,15 @@ defmodule THOU.Parser.Parser do
     mk_term(mk_free_var(name, TypeInference.apply_subst(type, subst)))
   end
 
-  # TODO: handle XOR...
+  defp build_term({:pre_const, "!=", type}, subst) do
+    not_equals_term(TypeInference.apply_subst(type, subst))
+  end
+
+  defp build_term({:pre_const, "<~>", _}, _), do: xor_term()
+  defp build_term({:pre_const, "<=", _}, _), do: implied_by_term()
+  defp build_term({:pre_const, "~|", _}, _), do: nor_term()
+  defp build_term({:pre_const, "~&", _}, _), do: nand_term()
+
   defp build_term({:pre_const, name, type}, subst) do
     mk_term(mk_const(name, TypeInference.apply_subst(type, subst)))
   end
