@@ -13,7 +13,7 @@ defmodule THOU.Parser.Parser do
     def new, do: %Context{}
 
     def put_var(ctx, name, type) do
-      %Context{ctx | vars: Map.put(ctx.vars, name, type)}
+      %{ctx | vars: Map.put(ctx.vars, name, type)}
     end
 
     def get_type(ctx, name) do
@@ -21,7 +21,7 @@ defmodule THOU.Parser.Parser do
     end
 
     def put_const(ctx, name, type) do
-      %Context{ctx | consts: Map.put(ctx.consts, name, type)}
+      %{ctx | consts: Map.put(ctx.consts, name, type)}
     end
 
     def add_constraint(ctx, t1, t2) do
@@ -33,6 +33,10 @@ defmodule THOU.Parser.Parser do
 
   def parse(formula_str, context \\ Context.new()) do
     {:ok, tokens, "", _, _, _} = tokenize(formula_str)
+    parse_tokens(tokens, context)
+  end
+
+  def parse_tokens(tokens, context \\ Context.new()) do
     {pre_term, [], final_ctx} = parse_formula(tokens, context)
     substitutions = TypeInference.solve(final_ctx.constraints)
     build_term(pre_term, substitutions)
@@ -81,7 +85,7 @@ defmodule THOU.Parser.Parser do
   # --- Precedence Levels ---
 
   # Level 1: <, >, <=, =>, <=>, <~>
-  defp parse_formula(tokens, ctx) do
+  def parse_formula(tokens, ctx) do
     {lhs, rest, ctx2} = parse_disjunction(tokens, ctx)
     parse_formula_op(lhs, rest, ctx2)
   end
@@ -384,7 +388,7 @@ defmodule THOU.Parser.Parser do
   # --- Types ---
 
   # Parses $i, $o, or A > B
-  defp parse_type(tokens) do
+  def parse_type(tokens) do
     {lhs, rest} = parse_atomic_type(tokens)
 
     case rest do
@@ -401,6 +405,7 @@ defmodule THOU.Parser.Parser do
 
   defp parse_atomic_type([{:system, "$i"} | rest]), do: {mk_type(:i), rest}
   defp parse_atomic_type([{:system, "$o"} | rest]), do: {mk_type(:o), rest}
+  defp parse_atomic_type([{:atom, name} | rest]), do: {mk_type(String.to_atom(name), rest)}
 
   defp parse_atomic_type([{:lparen, _} | rest]) do
     {type, [{:rparen, _} | rest2]} = parse_type(rest)

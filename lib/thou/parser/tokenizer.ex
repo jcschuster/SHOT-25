@@ -5,6 +5,18 @@ defmodule THOU.Parser.Tokenizer do
 
   comment = string("%") |> concat(ascii_string([not: ?\n], min: 0)) |> ignore()
 
+  keywords =
+    choice([
+      string("include") |> replace({:keyword, :include}),
+      string("thf") |> replace({:keyword, :thf}),
+      string("type") |> replace({:role, :type}),
+      string("axiom") |> replace({:role, :axiom}),
+      string("definition") |> replace({:role, :definition}),
+      string("conjecture") |> replace({:role, :conjecture}),
+      string("lemma") |> replace({:role, :lemma}),
+      string("hypothesis") |> replace({:role, :hypothesis})
+    ])
+
   system_symbol =
     string("$")
     |> ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1)
@@ -71,6 +83,7 @@ defmodule THOU.Parser.Tokenizer do
       choice([
         whitespace,
         comment,
+        keywords,
         symbols,
         system_symbol,
         variable,
