@@ -5,11 +5,16 @@ defmodule THOU.Util do
   import THOU.HOL.Definitions
   import THOU.HOL.Patterns
 
-  def mk_new_unknown_type(),
-    do: mk_type(:"unknown_#{System.unique_integer([:positive, :monotonic])}")
+  def mk_new_unknown_type() do
+    mk_type(:"__unknown_#{System.unique_integer([:positive, :monotonic])}")
+  end
+
+  def unknown_type?(t) when is_atom(t) do
+    String.starts_with?(Atom.to_string(t), "__unknown_")
+  end
 
   def unknown_type?(type(goal: g)) do
-    is_atom(g) and String.starts_with?(Atom.to_string(g), "unknown_")
+    is_atom(g) and unknown_type?(g)
   end
 
   def unknown_type?(_), do: false

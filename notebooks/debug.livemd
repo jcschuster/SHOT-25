@@ -16,6 +16,7 @@ import HOL.Unification
 import HOL.Substitution
 import PrettyPrint
 import TPTPParser
+import THOU.Util
 import THOU.HOL.Definitions
 import THOU.HOL.Patterns
 import THOU.Prover
@@ -24,6 +25,18 @@ import THOU.Parser.Parser
 alias THOU.Parser.Parser.Context
 
 LoggerHelper.set_logger_warning()
+```
+
+```elixir
+unknown_type?(mk_type(:"__unknown_#{2}"))
+```
+
+```elixir
+parse("X @ Y")
+```
+
+```elixir
+"= = =" |> parse |> prove
 ```
 
 ```elixir

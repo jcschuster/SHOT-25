@@ -17,6 +17,8 @@ defmodule THOU.HOL.Definitions do
   @type_io_o type(goal: :o, args: [@type_io])
 
   defmacro type_o, do: Macro.escape(@type_o)
+  defmacro type_oo, do: Macro.escape(@type_oo)
+  defmacro type_ooo, do: Macro.escape(@type_ooo)
   defmacro type_i, do: Macro.escape(@type_i)
   defmacro type_io, do: Macro.escape(@type_io)
   defmacro type_io_o, do: Macro.escape(@type_io_o)
