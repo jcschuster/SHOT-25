@@ -1,4 +1,4 @@
-defmodule THOU.Parser.FileParser do
+defmodule THOU.Parser.TPTP do
   alias THOU.Parser.{Tokenizer, Parser}
   alias THOU.Parser.Parser.Context
 
@@ -6,14 +6,21 @@ defmodule THOU.Parser.FileParser do
     defstruct path: "", includes: [], types: %{}, definitions: [], axioms: [], conjecture: nil
   end
 
-  def parse_file(path) do
+  def parse_file(problem) do
+    path =
+      if System.get_env("TPTP_ROOT") == nil do
+        raise "TPTP_ROOT environment variable is not set"
+      else
+        Path.join(System.get_env("TPTP_ROOT"), problem)
+      end
+
     case File.read(path) do
       {:ok, content} -> parse_string(content, path)
       {:error, reason} -> {:error, "Could not read file #{path}: #{reason}"}
     end
   end
 
-  def parse_string(content, path \\ "memory") do
+  def parse_string(content, path) do
     {:ok, tokens, _, _, _, _} = Tokenizer.tokenize(content)
 
     # Initial problem structure
@@ -36,15 +43,7 @@ defmodule THOU.Parser.FileParser do
          ],
          problem
        ) do
-    # You might want to recursively parse the included file here or just store the path
-    # For a full system, you'd merge the included problem's types/axioms into the current one.
-
-    # Naive recursive load (be careful of cycles and paths!)
-    base_dir = Path.dirname(problem.path)
-    # Simplified path resolution
-    full_path = Path.join(base_dir, file_path)
-
-    case parse_file(full_path) do
+    case parse_file(file_path) do
       {:ok, included_problem} ->
         merged_problem = merge_problems(problem, included_problem)
         process_tokens(rest, merged_problem)
@@ -77,29 +76,21 @@ defmodule THOU.Parser.FileParser do
         process_tokens(remaining_tokens, %{problem | types: new_types})
 
       :definition ->
-        # Parse definition: name = term
-        # For definitions, we parse it as a standard formula where the top level is equality
-        # You might need to supply the current known types to the parser context
-
         ctx = build_context(problem)
-        {term, _rest, _} = Parser.parse_formula(formula_tokens, ctx)
-
-        # Note: Your Parser.parse returns a term directly or {term, rest, ctx} depending on function
-        # You likely want to use Parser.parse/2 entry point logic here but adapted for tokens
-
+        term = Parser.parse_tokens(formula_tokens, ctx)
         new_defs = problem.definitions ++ [{name, term}]
         process_tokens(remaining_tokens, %{problem | definitions: new_defs})
 
       :axiom ->
         ctx = build_context(problem)
         # You might need to adapt your Parser.parse to accept tokens directly
-        term = parse_term_from_tokens(formula_tokens, ctx)
+        term = Parser.parse_tokens(formula_tokens, ctx)
         new_axioms = problem.axioms ++ [{name, term}]
         process_tokens(remaining_tokens, %{problem | axioms: new_axioms})
 
       :conjecture ->
         ctx = build_context(problem)
-        term = parse_term_from_tokens(formula_tokens, ctx)
+        term = Parser.parse_tokens(formula_tokens, ctx)
         process_tokens(remaining_tokens, %{problem | conjecture: {name, term}})
 
       _ ->
@@ -115,6 +106,10 @@ defmodule THOU.Parser.FileParser do
   end
 
   defp split_at_entry_end([{:rparen, _}, {:dot, _} | rest], 0, acc), do: {Enum.reverse(acc), rest}
+
+  defp split_at_entry_end([], _depth, _acc) do
+    raise "TPTP Parser Error: Unexpected end of file while extracting formula. Missing ' thf( ... ). ' closing sequence."
+  end
 
   defp split_at_entry_end([{:lparen, _} = t | rest], depth, acc),
     do: split_at_entry_end(rest, depth + 1, [t | acc])
@@ -151,15 +146,6 @@ defmodule THOU.Parser.FileParser do
       {name, type_struct}, ctx ->
         Context.put_const(ctx, name, type_struct)
     end)
-  end
-
-  defp parse_term_from_tokens(tokens, ctx) do
-    # We need to bridge the gap because Parser.parse/2 expects a string
-    # Create a temporary function in Parser to accept tokens directly
-    # or reconstruct string (inefficient)
-
-    # Assuming you modify Parser to expose parse_tokens/2:
-    THOU.Parser.Parser.parse_tokens(tokens, ctx)
   end
 
   defp merge_problems(main, included) do

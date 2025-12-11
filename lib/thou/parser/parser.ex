@@ -370,9 +370,9 @@ defmodule THOU.Parser.Parser do
         t = mk_new_unknown_type()
         parse_typed_vars_with_inference(rest, acc ++ [{name, t}])
 
-      [{:var, name}, {:rbracket, _} | _] ->
+      [{:var, name}, {:rbracket, _} = rb | rest] ->
         t = mk_new_unknown_type()
-        {acc ++ [{name, t}], tokens}
+        {acc ++ [{name, t}], [rb | rest]}
 
       [{:var, name}, {:colon, _} | rest] ->
         {type, rest2} = parse_type(rest)
@@ -394,8 +394,7 @@ defmodule THOU.Parser.Parser do
     case rest do
       [{:arrow, _} | rest2] ->
         {rhs, rest3} = parse_type(rest2)
-        type(goal: g, args: args) = rhs
-        type = mk_type(g, args ++ [lhs])
+        type = mk_type(rhs, [lhs])
         {type, rest3}
 
       _ ->
@@ -405,7 +404,7 @@ defmodule THOU.Parser.Parser do
 
   defp parse_atomic_type([{:system, "$i"} | rest]), do: {mk_type(:i), rest}
   defp parse_atomic_type([{:system, "$o"} | rest]), do: {mk_type(:o), rest}
-  defp parse_atomic_type([{:atom, name} | rest]), do: {mk_type(String.to_atom(name), rest)}
+  defp parse_atomic_type([{:atom, name} | rest]), do: {mk_type(String.to_atom(name)), rest}
 
   defp parse_atomic_type([{:lparen, _} | rest]) do
     {type, [{:rparen, _} | rest2]} = parse_type(rest)
@@ -499,6 +498,10 @@ defmodule THOU.Parser.Parser do
     pred_type = mk_type(:o, [alpha])
     type = mk_type(:o, [pred_type])
     {{:pre_const, "Σ", type}, rest, ctx}
+  end
+
+  defp parse_atomic([{:lambda, _} | rest], ctx) do
+    parse_lambda(rest, ctx)
   end
 
   defp parse_atomic([{:not, _} | rest], ctx) do

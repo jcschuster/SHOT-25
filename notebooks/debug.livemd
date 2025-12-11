@@ -23,12 +23,14 @@ import THOU.Prover
 import THOU.TermOrder.TypeOrder
 import THOU.Parser.Parser
 alias THOU.Parser.Parser.Context
+alias THOU.Parser.TPTP
+alias THOU.Runner
 
 LoggerHelper.set_logger_warning()
 ```
 
 ```elixir
-unknown_type?(mk_type(:"__unknown_#{2}"))
+System.put_env("TPTP_ROOT", "D:/TPTP-v9.2.1")
 ```
 
 ```elixir
@@ -36,7 +38,7 @@ parse("X @ Y")
 ```
 
 ```elixir
-"= = =" |> parse |> prove
+parse("( p @ ( a & b ) ) = ( p @ ( b & a ) )")
 ```
 
 ```elixir
@@ -45,7 +47,23 @@ ctx = Context.new()
       |> Context.put_const("a", mk_type(:o))
       |> Context.put_const("b", mk_type(:o))
 
-parse("( p @ ( a & b ) ) = ( p @ ( b & a ) )", ctx) |> prove
+parse("( p @ ( a & b ) ) = ( p @ ( b & a ) )", ctx)
+```
+
+```elixir
+TPTP.parse_file "Problems/ALG/ALG022^7.p"
+```
+
+```elixir
+Runner.prove_file("Problems/ALG/ALG001^5.p")
+```
+
+```elixir
+unknown_type?(mk_type(:"__unknown_#{2}"))
+```
+
+```elixir
+"= = =" |> parse |> prove
 ```
 
 ## Types, Constants, Terms

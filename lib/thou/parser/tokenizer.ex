@@ -5,17 +5,19 @@ defmodule THOU.Parser.Tokenizer do
 
   comment = string("%") |> concat(ascii_string([not: ?\n], min: 0)) |> ignore()
 
-  keywords =
-    choice([
-      string("include") |> replace({:keyword, :include}),
-      string("thf") |> replace({:keyword, :thf}),
-      string("type") |> replace({:role, :type}),
-      string("axiom") |> replace({:role, :axiom}),
-      string("definition") |> replace({:role, :definition}),
-      string("conjecture") |> replace({:role, :conjecture}),
-      string("lemma") |> replace({:role, :lemma}),
-      string("hypothesis") |> replace({:role, :hypothesis})
-    ])
+  def categorize_atom(name) do
+    case name do
+      "include" -> {:keyword, :include}
+      "thf" -> {:keyword, :thf}
+      "type" -> {:role, :type}
+      "axiom" -> {:role, :axiom}
+      "definition" -> {:role, :definition}
+      "conjecture" -> {:role, :conjecture}
+      "lemma" -> {:role, :lemma}
+      "hypothesis" -> {:role, :hypothesis}
+      _ -> {:atom, name}
+    end
+  end
 
   system_symbol =
     string("$")
@@ -33,7 +35,7 @@ defmodule THOU.Parser.Tokenizer do
     ascii_string([?a..?z], 1)
     |> optional(ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1))
     |> reduce({Enum, :join, []})
-    |> unwrap_and_tag(:atom)
+    |> map({__MODULE__, :categorize_atom, []})
 
   distinct_object =
     ignore(string("'"))
@@ -83,7 +85,6 @@ defmodule THOU.Parser.Tokenizer do
       choice([
         whitespace,
         comment,
-        keywords,
         symbols,
         system_symbol,
         variable,
