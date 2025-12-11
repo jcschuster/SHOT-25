@@ -51,15 +51,15 @@ parse("( p @ ( a & b ) ) = ( p @ ( b & a ) )", ctx)
 ```
 
 ```elixir
-TPTP.parse_file "Problems/ALG/ALG022^7.p"
+{:ok, problem} = TPTP.parse_file "Problems/ALG/ALG001^5.p"
+%TPTP.Problem{conjecture: conj} = problem
+{_name, formula} = conj
+
+PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-Runner.prove_file("Problems/ALG/ALG001^5.p")
-```
-
-```elixir
-unknown_type?(mk_type(:"__unknown_#{2}"))
+Runner.prove_file "Problems/ALG/ALG001^5.p"
 ```
 
 ```elixir
