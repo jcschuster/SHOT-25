@@ -123,7 +123,12 @@ defmodule THOU.Util do
 
   def pp_assignment(clause) when is_map(clause) do
     pretty_assignments =
-      Enum.map(clause, &"#{PrettyPrint.pp_term(&1)} ← #{!match?(negated(_), &1)}")
+      Enum.map(clause, fn t ->
+        case t do
+          negated(inner) -> "#{PrettyPrint.pp_term(inner)} ← false"
+          _ -> "#{PrettyPrint.pp_term(t)} ← true"
+        end
+      end)
 
     "[" <> Enum.join(pretty_assignments, ", ") <> "]"
   end

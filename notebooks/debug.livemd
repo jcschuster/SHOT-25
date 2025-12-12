@@ -30,15 +30,30 @@ LoggerHelper.set_logger_warning()
 ```
 
 ```elixir
-System.put_env("TPTP_ROOT", "D:/TPTP-v9.2.1")
+parse("((p @ a) & (p @ b)) => (p @ (a & b))") |> prove
 ```
+
+## TPTP Files
+
+```elixir
+#System.put_env("TPTP_ROOT", "D:/TPTP-v9.2.1")
+```
+
+```elixir
+{:ok, problem} = TPTP.parse_file "Problems/ALG/ALG001^5.p"
+%TPTP.Problem{conjecture: {_name, formula}} = problem
+
+PrettyPrint.pp_term(formula)
+```
+
+```elixir
+Runner.prove_file "Problems/ALG/ALG001^5.p"
+```
+
+## Sanity Checks
 
 ```elixir
 parse("X @ Y")
-```
-
-```elixir
-parse("( p @ ( a & b ) ) = ( p @ ( b & a ) )")
 ```
 
 ```elixir
@@ -51,15 +66,7 @@ parse("( p @ ( a & b ) ) = ( p @ ( b & a ) )", ctx)
 ```
 
 ```elixir
-{:ok, problem} = TPTP.parse_file "Problems/ALG/ALG001^5.p"
-%TPTP.Problem{conjecture: conj} = problem
-{_name, formula} = conj
-
-PrettyPrint.pp_term(formula)
-```
-
-```elixir
-Runner.prove_file "Problems/ALG/ALG001^5.p"
+parse("( p @ ( a & b ) ) = ( p @ ( b & a ) )")
 ```
 
 ```elixir
