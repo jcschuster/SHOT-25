@@ -411,7 +411,7 @@ prove surj_cantor
 prove(parse "(=) = (=)")
 ```
 
-## Examples to look at
+## Examples to look at (both should be provable)
 
 ```elixir
 ctx = Context.new()
