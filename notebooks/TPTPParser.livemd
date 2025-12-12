@@ -1,7 +1,22 @@
+<!-- livebook:{"default_language":"python"} -->
+
 # Parser for TH0
 
 ```elixir
-Mix.install([{:hol, "1.0.2"}, {:nimble_parsec, "~> 1.4.2"}])
+Mix.install([
+  {:hol, "1.0.2"},
+  {:nimble_parsec, "~> 1.4.2"},
+  {:pythonx, "~> 0.4.2"},
+  {:kino_pythonx, "~> 0.1.0"}
+])
+```
+
+```pyproject.toml
+[project]
+name = "project"
+version = "0.0.0"
+requires-python = "==3.13.*"
+dependencies = []
 ```
 
 ## Setup

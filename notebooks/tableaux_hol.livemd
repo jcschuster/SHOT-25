@@ -411,6 +411,39 @@ prove surj_cantor
 prove(parse "(=) = (=)")
 ```
 
+## Examples to look at
+
+```elixir
+ctx = Context.new()
+      |> Context.put_const("a", type_o())
+      |> Context.put_const("b", type_o())
+formula = parse("(![P : $o>$o]: ((P @ (a & b)) => (P @ (b & a))))", ctx)
+
+PrettyPrint.pp_term(formula)
+```
+
+```elixir
+prove formula
+```
+
+```elixir
+ctx = Context.new()
+      |> Context.put_const("a", type_o())
+      |> Context.put_const("b", type_o())
+formula = parse("
+(
+(![X : $o]: (![Y : $o]: ((X <=> Y) => (![P : $o > $o]: ((P @ Y) => (P @ Y))))))
+=>
+(![P : $o>$o]: ((P @ (a & b)) => (P @ (b & a))))
+)", ctx)
+
+PrettyPrint.pp_term(formula)
+```
+
+```elixir
+prove formula
+```
+
 ## Appendix A: Cantor - Example by Hand (Lecture 16.7.25)
 
 __Notation:__
