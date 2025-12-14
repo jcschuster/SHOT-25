@@ -10,7 +10,7 @@ defmodule THOU.HOL.Patterns do
 
   defmacro negated(term) do
     quote do
-      hol_term(head: neg_const(), args: [unquote(term)])
+      hol_term(bvars: [], head: neg_const(), args: [unquote(term)])
     end
   end
 end
