@@ -1,0 +1,81 @@
+# THOU Demo
+
+```elixir
+Mix.install([
+  {:thou, path: Path.join(__DIR__, "..")}
+])
+```
+
+## Setup
+
+```elixir
+import THOU.{Prover, Parser.Parser, HOL.Definitions}
+alias THOU.Runner
+alias THOU.Parser.{Parser.Context, TPTP}
+
+Logger.configure(level: :error)
+```
+
+## Parsing TPTP
+
+```elixir
+"P => P | q" |> parse |> prove
+```
+
+```elixir
+"P => P | q" |> parse |> TPTP.term_to_tptp()
+```
+
+```elixir
+TPTP.parse_string "thf(a_type, type, a: $tType)."
+```
+
+```elixir
+{:ok, problem} = TPTP.parse_file "Problems/ALG/ALG001^5.p"
+%TPTP.Problem{conjecture: {_name, formula}} = problem
+
+TPTP.term_to_tptp formula
+```
+
+## Equivalence of Leibnitz and Andrews Equality
+
+```elixir
+leibnitz = "![P : $i > $o]: (P @ X) => (P @ Y)"
+andrews  = "![Q : $i > $i > $o]: (![Z: $i]: Q @ Z @ Z) => Q @ X @ Y"
+
+parse("(#{leibnitz}) <=> (#{andrews})") |> prove
+```
+
+## Cantor's Surjective Theorem
+
+```elixir
+surj_cantor = "~ ?[F : $i > $i > $o]: ![Y : $i > $o]: ?[X : $i]: (F @ X) = Y" |> parse
+prove surj_cantor
+```
+
+## Proving TPTP Problems
+
+```elixir
+Runner.prove_file "Problems/ALG/ALG001^5.p"  # Rating: 0.00
+```
+
+## Need for Extensionality Principles
+
+```elixir
+"p @ a & p @ b => p @ (a & b)" |> parse |> prove
+```
+
+```elixir
+"(![P : $o>$o]: ((P @ (a & b)) => (P @ (b & a))))" |> parse |> prove
+```
+
+```elixir
+"
+(![X : $o]: (![Y : $o]: ((X <=> Y) => (![P : $o > $o]: ((P @ X) => (P @ Y))))))
+=>
+(![P : $o>$o]: ((P @ (a & b)) => (P @ (b & a))))
+"
+  |> parse
+  |> prove
+  # runs for a long time...
+```

@@ -260,7 +260,7 @@ defmodule THOU.Prover do
       #################################################################################
 
       # atomic formula with free variable head
-      [formula = hol_term(head: declaration(kind: :fv), type: type_o()) | rest] ->
+      [hol_term(head: declaration(kind: :fv), type: type_o()) = formula | rest] ->
         Logger.debug("positive atom")
 
         handle_atom(
@@ -337,24 +337,21 @@ defmodule THOU.Prover do
       ################################## REFLEXIVITY ##################################
 
       # reflexivity of equality -> a=a is always true
-      [hol_term(head: any_equals_const(), args: [a, a]) | rest] ->
+      [equality(a, a) | rest] ->
         Logger.debug("reflexivity of equality")
         tableaux(rest, max_inst, clause, constraints, instantiation_count, incomplete?)
 
       # negated equality -> ¬(a=a) is always false
-      [negated(hol_term(head: any_equals_const(), args: [a, a])) | _rest] ->
+      [negated(equality(a, a)) | _rest] ->
         Logger.debug("irreflexivity of inequality")
         {:closed, []}
 
       ################################# EXTENSIONALITY ################################
 
       [
-        hol_term(
-          head: any_equals_const(),
-          args: [
-            hol_term(bvars: [], head: declaration(name: n) = h, args: args1, type: t),
-            hol_term(bvars: [], head: h, args: args2, type: t)
-          ]
+        equality(
+          hol_term(bvars: [], head: declaration(name: n) = h, args: args1, type: t),
+          hol_term(bvars: [], head: h, args: args2, type: t)
         )
         | rest
       ]
@@ -378,12 +375,9 @@ defmodule THOU.Prover do
         )
 
       [
-        hol_term(
-          head: any_equals_const(),
-          args: [
-            hol_term(bvars: [], head: hol_term() = h, args: args1, type: t),
-            hol_term(bvars: [], head: h, args: args2, type: t)
-          ]
+        equality(
+          hol_term(bvars: [], head: hol_term() = h, args: args1, type: t),
+          hol_term(bvars: [], head: h, args: args2, type: t)
         )
         | rest
       ] ->
@@ -407,12 +401,9 @@ defmodule THOU.Prover do
 
       [
         negated(
-          hol_term(
-            head: any_equals_const(),
-            args: [
-              hol_term(bvars: [], head: hol_term() = h, args: args1, type: t),
-              hol_term(bvars: [], head: h, args: args2, type: t)
-            ]
+          equality(
+            hol_term(bvars: [], head: hol_term() = h, args: args1, type: t),
+            hol_term(bvars: [], head: h, args: args2, type: t)
           )
         )
         | rest
@@ -439,12 +430,9 @@ defmodule THOU.Prover do
 
       [
         negated(
-          hol_term(
-            head: any_equals_const(),
-            args: [
-              hol_term(bvars: [], head: declaration(name: n) = h, args: args1, type: t),
-              hol_term(bvars: [], head: h, args: args2, type: t)
-            ]
+          equality(
+            hol_term(bvars: [], head: declaration(name: n) = h, args: args1, type: t),
+            hol_term(bvars: [], head: h, args: args2, type: t)
           )
         )
         | rest
@@ -473,30 +461,20 @@ defmodule THOU.Prover do
       ############################# TYPED EQUALITY SYMBOLS ############################
 
       # equality (type o) -> transform to equivalence
-      [hol_term(head: equals_const(type_o()), args: [hol_term() = a, hol_term() = b]) | rest] ->
+      [typed_equality(a, b, type_o()) | rest] ->
         Logger.debug("equality o")
         equiv = equivalent_term() |> mk_appl_term(a) |> mk_appl_term(b)
         tableaux([equiv | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
 
       # negated equality (type o)
-      [
-        negated(hol_term(head: equals_const(type_o()), args: [hol_term() = a, hol_term() = b]))
-        | rest
-      ] ->
+      [negated(typed_equality(a, b, type_o())) | rest] ->
         Logger.debug("negated equality o")
         eq = equivalent_term() |> mk_appl_term(a) |> mk_appl_term(b)
         neg_eq = neg_term() |> mk_appl_term(eq)
         tableaux([neg_eq | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
 
       # equality (other atomic types) -> Leibnitz equality
-      [
-        hol_term(
-          head: equals_const(type(goal: g, args: [])),
-          args: [hol_term() = a, hol_term() = b]
-        ) = formula
-        | rest
-      ]
-      when is_atom(g) ->
+      [typed_equality(a, b, type(goal: g, args: [])) = formula | rest] when is_atom(g) ->
         t = type(goal: g, args: [])
 
         if unknown_type?(t) do
@@ -535,16 +513,7 @@ defmodule THOU.Prover do
         end
 
       # negated equality (other atomic types) -> negated Leibnitz equality
-      [
-        negated(
-          hol_term(
-            head: equals_const(type(goal: g, args: [])),
-            args: [hol_term() = a, hol_term() = b]
-          )
-        ) = formula
-        | rest
-      ]
-      when is_atom(g) ->
+      [negated(typed_equality(a, b, type(goal: g, args: []))) = formula | rest] when is_atom(g) ->
         t = type(goal: g, args: [])
 
         if unknown_type?(t) do
@@ -584,7 +553,7 @@ defmodule THOU.Prover do
         end
 
       # equality (function types) -> functional extensionality
-      [hol_term(head: equals_const(type), args: [hol_term() = a, hol_term() = b]) | rest] ->
+      [typed_equality(a, b, type) | rest] ->
         Logger.debug("equality function")
         [first_arg_type | rest_arg_types] = get_arg_types(type)
         goal_type = mk_type(get_goal_type(type), rest_arg_types)
@@ -602,7 +571,7 @@ defmodule THOU.Prover do
         tableaux([quant | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
 
       # negated equality (function types) -> negated functional extensionality
-      [negated(hol_term(head: equals_const(type), args: [hol_term() = a, hol_term() = b])) | rest] ->
+      [negated(typed_equality(a, b, type)) | rest] ->
         Logger.debug("negated equality function")
         [first_arg_type | rest_arg_types] = get_arg_types(type)
         goal_type = mk_type(get_goal_type(type), rest_arg_types)
@@ -632,12 +601,12 @@ defmodule THOU.Prover do
       #################################################################################
 
       # disjunction
-      [hol_term(head: or_const(), args: [hol_term() = a, hol_term() = b]) | rest] ->
+      [disjunction(a, b) | rest] ->
         Logger.debug("disjunction")
         branch(a, b, rest, clause, constraints, max_inst, instantiation_count, incomplete?)
 
       # negated disjunction
-      [negated(hol_term(head: or_const(), args: [hol_term() = a, hol_term() = b])) | rest] ->
+      [negated(disjunction(a, b)) | rest] ->
         Logger.debug("negated disjunction")
 
         tableaux(
@@ -650,12 +619,12 @@ defmodule THOU.Prover do
         )
 
       # conjunction
-      [hol_term(head: and_const(), args: [hol_term() = a, hol_term() = b]) | rest] ->
+      [conjunction(a, b) | rest] ->
         Logger.debug("conjunction")
         tableaux([a, b | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
 
       # negated conjunction
-      [negated(hol_term(head: and_const(), args: [hol_term() = a, hol_term() = b])) | rest] ->
+      [negated(conjunction(a, b)) | rest] ->
         Logger.debug("negated conjunction")
 
         branch(
@@ -670,7 +639,7 @@ defmodule THOU.Prover do
         )
 
       # implication
-      [hol_term(head: implies_const(), args: [hol_term() = a, hol_term() = b]) | rest] ->
+      [implication(a, b) | rest] ->
         Logger.debug("implication")
 
         branch(
@@ -685,7 +654,7 @@ defmodule THOU.Prover do
         )
 
       # negated implication
-      [negated(hol_term(head: implies_const(), args: [hol_term() = a, hol_term() = b])) | rest] ->
+      [negated(implication(a, b)) | rest] ->
         Logger.debug("negated implication")
 
         tableaux(
@@ -698,7 +667,7 @@ defmodule THOU.Prover do
         )
 
       # equivalence
-      [hol_term(head: equivalent_const(), args: [hol_term() = a, hol_term() = b]) | rest] ->
+      [equivalence(a, b) | rest] ->
         Logger.debug("equivalence")
 
         branch(
@@ -713,7 +682,7 @@ defmodule THOU.Prover do
         )
 
       # negated equivalence
-      [negated(hol_term(head: equivalent_const(), args: [hol_term() = a, hol_term() = b])) | rest] ->
+      [negated(equivalence(a, b)) | rest] ->
         Logger.debug("negated equivalence")
 
         branch(
@@ -732,11 +701,12 @@ defmodule THOU.Prover do
       #################################################################################
 
       # universal quantification -> fresh variable (can be repeated!)
-      [hol_term(head: pi_const(type(args: [type])), args: [hol_term() = body]) = term | rest] ->
+      [universal_quantification(body) = term | rest] ->
         Logger.debug("universal quantification")
         count = Map.get(instantiation_count, term, 0)
 
         if count < max_inst do
+          type(args: [type]) = get_term_type(body)
           new_instantiation_count = Map.put(instantiation_count, term, count + 1)
           fresh_variable = mk_term(mk_uniqe_var(type))
           fresh_instance = mk_appl_term(body, fresh_variable)
@@ -756,8 +726,10 @@ defmodule THOU.Prover do
         end
 
       # negated universal quantification -> skolemization
-      [negated(hol_term(head: pi_const(type(args: [type])), args: [hol_term() = body])) | rest] ->
+      [negated(universal_quantification(body)) | rest] ->
         Logger.debug("negated universal quantification")
+
+        type(args: [type]) = get_term_type(body)
 
         tableaux(
           [
@@ -775,8 +747,10 @@ defmodule THOU.Prover do
         )
 
       # existential quantification -> skolemization
-      [hol_term(head: sigma_const(type(args: [type])), args: [hol_term() = body]) | rest] ->
+      [existential_quantification(body) | rest] ->
         Logger.debug("existential quantification")
+
+        type(args: [type]) = get_term_type(body)
 
         tableaux(
           [mk_appl_term(body, mk_new_skolem_term(get_fvars(body), type)) | rest],
@@ -788,14 +762,12 @@ defmodule THOU.Prover do
         )
 
       # negated existential quantification -> fresh variable (can be repeated!)
-      [
-        negated(hol_term(head: sigma_const(type(args: [type])), args: [hol_term() = body])) = term
-        | rest
-      ] ->
+      [negated(existential_quantification(body)) = term | rest] ->
         Logger.debug("negated existential quantification")
         count = Map.get(instantiation_count, term, 0)
 
         if count < max_inst do
+          type(args: [type]) = get_term_type(body)
           new_instantiation_count = Map.put(instantiation_count, term, count + 1)
           fresh_variable = mk_term(mk_uniqe_var(type))
           fresh_instance = syn_negate(mk_appl_term(body, fresh_variable))

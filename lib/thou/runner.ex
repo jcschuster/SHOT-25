@@ -56,8 +56,6 @@ defmodule THOU.Runner do
   end
 
   defp print_result(:valid), do: IO.puts("STATUS: Theorem (Proof Found)")
-  # Should not happen for a conjecture check usually
-  defp print_result(:unsat), do: IO.puts("STATUS: Unsatisfiable")
 
   defp print_result({:countersat, _}),
     do: IO.puts("STATUS: CounterSatisfiable (Counter-model found)")

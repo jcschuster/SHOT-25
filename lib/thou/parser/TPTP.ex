@@ -237,7 +237,7 @@ defmodule THOU.Parser.TPTP do
     end
   end
 
-  def parse_string(content, path) do
+  def parse_string(content, path \\ "memory") do
     {:ok, tokens, _, _, _, _} = Tokenizer.tokenize(content)
 
     problem = %Problem{path: path}
