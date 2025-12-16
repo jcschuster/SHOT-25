@@ -203,15 +203,14 @@ defmodule THOU.Parser.Parser do
   defp parse_unitary([{:exists, _} | rest], ctx), do: parse_quantifier(:sigma, rest, ctx)
   defp parse_unitary([{:lambda, _} | rest], ctx), do: parse_lambda(rest, ctx)
 
-  defp parse_unitary([{:pi, _} | [{:lparen, _}, {:lambda, _} | _] = rest], ctx),
-    do: parse_quantifier(:sigma, rest, ctx)
+  defp parse_unitary([{:pi, _} | [_ | _] = rest], ctx),
+    do: parse_quantifier(:pi, rest, ctx)
 
-  defp parse_unitary([{:sigma, _} | [{:lparen, _}, {:lambda, _} | _] = rest], ctx),
+  defp parse_unitary([{:sigma, _} | [_ | _] = rest], ctx),
     do: parse_quantifier(:sigma, rest, ctx)
 
   defp parse_unitary(tokens, ctx), do: parse_equality(tokens, ctx)
 
-  # Equality (=) requires STRICT type checking to generate the correct constant
   defp parse_equality(tokens, ctx) do
     {lhs, rest, ctx2} = parse_application(tokens, ctx)
 
@@ -340,6 +339,27 @@ defmodule THOU.Parser.Parser do
       [] ->
         raise "Syntax Error: Unexpected end of input."
     end
+  end
+
+  defp parse_quantifier(type_key, rest, ctx) do
+    {term, rest2, ctx2} = parse_unitary(rest, ctx)
+
+    term_type = get_pre_type(term)
+    alpha = mk_new_unknown_type()
+    expected_pred_type = mk_type(:o, [alpha])
+
+    ctx3 = Context.add_constraint(ctx2, term_type, expected_pred_type)
+
+    quant_name =
+      case type_key do
+        :pi -> "Π"
+        :sigma -> "Σ"
+      end
+
+    quant_const_type = mk_type(:o, [expected_pred_type])
+    quant_const = {:pre_const, quant_name, quant_const_type}
+
+    {{:pre_app, quant_const, term, type_o()}, rest2, ctx3}
   end
 
   # Handles ^ [X:Type]: Body

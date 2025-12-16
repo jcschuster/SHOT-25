@@ -2,6 +2,7 @@
 
 ```elixir
 Mix.install([
+  {:hol, "1.0.2"},
   {:thou, path: Path.join(__DIR__, "..")}
 ])
 ```
@@ -10,6 +11,7 @@ Mix.install([
 
 ```elixir
 import THOU.{Prover, Parser.Parser, HOL.Definitions}
+import HOL.Data
 alias THOU.Runner
 alias THOU.Parser.{Parser.Context, TPTP}
 
@@ -23,11 +25,38 @@ Logger.configure(level: :error)
 ```
 
 ```elixir
-"P => P | q" |> parse |> TPTP.term_to_tptp()
+"(f @ a) = (f @ b) => a = b" |> parse
 ```
 
 ```elixir
-TPTP.parse_string "thf(a_type, type, a: $tType)."
+ctx = Context.new()
+  |> Context.put_const("f", mk_type(type_i(), [type_i()]))
+
+"(f @ a) = (f @ b) => a = b" |> parse(ctx)
+```
+
+```elixir
+"P | q <= P <~> q" |> parse |> TPTP.term_to_tptp()
+```
+
+```elixir
+{:ok, problem} = TPTP.parse_string "
+  thf(human_type, type, human: $tType).
+  thf(mortal, type, mortal: human > $o).
+  thf(socrates, type, socrates: human).
+  thf(mortal_humans, axiom,
+    !! mortal
+  ).
+  thf(will_socrates_die, conjecture,
+    mortal @ socrates
+  ).
+"
+```
+
+```elixir
+axiom_terms = Enum.map(problem.axioms, fn {_name, term} -> term end)
+{name, conjecture} = problem.conjecture
+prove(conjecture, axiom_terms)
 ```
 
 ```elixir
