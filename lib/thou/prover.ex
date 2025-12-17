@@ -18,7 +18,7 @@ defmodule THOU.Prover do
     Enum.reduce_while(1..@max_instantiations//1, {:incomplete, [], []}, fn max_inst, _ ->
       case tableaux(formulas, max_inst) do
         {:incomplete, clause, constr} ->
-          Logger.debug("\nInstantiation limit exceeded, trying higher limit\n")
+          Logger.info("\nInstantiation limit exceeded, trying higher limit\n")
           {:cont, {:incomplete, clause, constr}}
 
         res_state ->
@@ -44,11 +44,11 @@ defmodule THOU.Prover do
     Enum.reduce(literals, [], fn lit, solutions ->
       ("Trying to unify #{PrettyPrint.pp_term(formula)} with literal #{PrettyPrint.pp_term(lit)}" <>
          " under constraints #{pp_constraints(constraints)}")
-      |> Logger.debug()
+      |> Logger.notice()
 
       result = unify([{formula, lit} | constraints], true, @unification_depth)
 
-      PrettyPrint.pp_res(result) |> Logger.debug()
+      PrettyPrint.pp_res(result) |> Logger.notice()
 
       {:unif_res_sum, unif_solutions, _} = result
 
@@ -210,29 +210,29 @@ defmodule THOU.Prover do
          incomplete? \\ false
        ) do
     if formulas == [] do
-      "\nNo formulas remain" |> Logger.debug()
+      "No formulas remain" |> Logger.notice()
     else
       [formula | rest] = formulas
-      "\nProcessing formula #{PrettyPrint.pp_term(formula)}" |> Logger.debug()
+      "Processing formula #{PrettyPrint.pp_term(formula)}" |> Logger.notice()
       rest_pp = Enum.map(rest, &PrettyPrint.pp_term/1) |> inspect()
-      ("Rest: " <> rest_pp) |> Logger.debug()
+      ("Rest: " <> rest_pp) |> Logger.info()
       clause_pp = Enum.map(clause, &PrettyPrint.pp_term/1) |> inspect()
-      ("Clause: " <> clause_pp) |> Logger.debug()
+      ("Clause: " <> clause_pp) |> Logger.info()
 
       if get_term_type(formula) != type_o() do
-        IO.puts("All formulas must be of type bool")
+        Logger.error("All formulas must be of type bool")
       end
     end
 
     case formulas do
       # empty formulas and incomplete flag -> rules exhausted while max_inst met
       [] when incomplete? ->
-        Logger.debug("branch open due to exceeding maximum instantiations")
+        Logger.notice("OPEN: no formulas remain, exceeded maximum instantiation limit")
         {:incomplete, clause, constraints}
 
       # empty formulas -> rules exhausted
       [] ->
-        Logger.debug("branch stays open")
+        Logger.notice("OPEN: no formulas remain")
         {:open, clause, constraints}
 
       #################################################################################
@@ -240,19 +240,19 @@ defmodule THOU.Prover do
       #################################################################################
 
       [true_term() | rest] ->
-        Logger.debug("top constant")
+        Logger.notice("applying \"⊤\"")
         tableaux(rest, max_inst, clause, constraints, instantiation_count, incomplete?)
 
       [negated(true_term()) | _rest] ->
-        Logger.debug("negated top constant -> branch closed")
+        Logger.notice("applying \"¬⊤\" (closing branch)")
         {:closed, []}
 
       [false_term() | _rest] ->
-        Logger.debug("bottom constant -> branch closed")
+        Logger.notice("applying \"⊥\" (closing branch)")
         {:closed, []}
 
       [negated(false_term()) | rest] ->
-        Logger.debug("negated bottom constant")
+        Logger.notice("applying \"⊤\"")
         tableaux(rest, max_inst, clause, constraints, instantiation_count, incomplete?)
 
       #################################################################################
@@ -261,7 +261,7 @@ defmodule THOU.Prover do
 
       # atomic formula with free variable head
       [hol_term(head: declaration(kind: :fv), type: type_o()) = formula | rest] ->
-        Logger.debug("positive atom")
+        Logger.notice("applying \"Atom\"")
 
         handle_atom(
           formula,
@@ -277,7 +277,7 @@ defmodule THOU.Prover do
       # atomic formula with constant as head (no logical connective)
       [hol_term(head: declaration(kind: :co, name: name), type: type_o()) = formula | rest]
       when name not in signature_symbols() ->
-        Logger.debug("positive atom")
+        Logger.notice("applying \"Atom\"")
 
         handle_atom(
           formula,
@@ -292,7 +292,7 @@ defmodule THOU.Prover do
 
       # negated atomic formula with free variable head
       [negated(hol_term(head: declaration(kind: :fv))) = formula | rest] ->
-        Logger.debug("negative atom")
+        Logger.notice("applying \"Atom\"")
 
         handle_atom(
           formula,
@@ -308,7 +308,7 @@ defmodule THOU.Prover do
       # negated atomic formula with constant as head (no logical connective)
       [negated(hol_term(head: declaration(kind: :co, name: name))) = formula | rest]
       when name not in signature_symbols() ->
-        Logger.debug("negative atom")
+        Logger.notice("applying \"Atom\"")
 
         handle_atom(
           formula,
@@ -327,7 +327,7 @@ defmodule THOU.Prover do
 
       # double negation
       [negated(negated(a)) | rest] ->
-        Logger.debug("double negation")
+        Logger.notice("applying \"¬¬\"")
         tableaux([a | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
 
       #################################################################################
@@ -338,12 +338,12 @@ defmodule THOU.Prover do
 
       # reflexivity of equality -> a=a is always true
       [equality(a, a) | rest] ->
-        Logger.debug("reflexivity of equality")
+        Logger.notice("applying \"=r\"")
         tableaux(rest, max_inst, clause, constraints, instantiation_count, incomplete?)
 
       # negated equality -> ¬(a=a) is always false
       [negated(equality(a, a)) | _rest] ->
-        Logger.debug("irreflexivity of inequality")
+        Logger.notice("applying \"¬=r\"")
         {:closed, []}
 
       ################################# EXTENSIONALITY ################################
@@ -356,6 +356,8 @@ defmodule THOU.Prover do
         | rest
       ]
       when n not in signature_symbols() ->
+        Logger.notice("applying \"=ext\"")
+
         subproblems =
           Enum.zip(args1, args2)
           |> Enum.map(fn {t1, t2} ->
@@ -381,6 +383,8 @@ defmodule THOU.Prover do
         )
         | rest
       ] ->
+        Logger.notice("applying \"=ext\"")
+
         subproblems =
           Enum.zip(args1, args2)
           |> Enum.map(fn {t1, t2} ->
@@ -408,6 +412,8 @@ defmodule THOU.Prover do
         )
         | rest
       ] ->
+        Logger.notice("applying \"¬=ext\"")
+
         inner_subproblems =
           Enum.zip(args1, args2)
           |> Enum.map(fn {t1, t2} ->
@@ -438,6 +444,8 @@ defmodule THOU.Prover do
         | rest
       ]
       when n not in signature_symbols() ->
+        Logger.notice("applying \"¬=ext\"")
+
         inner_subproblems =
           Enum.zip(args1, args2)
           |> Enum.map(fn {t1, t2} ->
@@ -462,13 +470,13 @@ defmodule THOU.Prover do
 
       # equality (type o) -> transform to equivalence
       [typed_equality(a, b, type_o()) | rest] ->
-        Logger.debug("equality o")
+        Logger.notice("applying \"=o\"")
         equiv = equivalent_term() |> mk_appl_term(a) |> mk_appl_term(b)
         tableaux([equiv | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
 
       # negated equality (type o)
       [negated(typed_equality(a, b, type_o())) | rest] ->
-        Logger.debug("negated equality o")
+        Logger.notice("applying \"¬=o\"")
         eq = equivalent_term() |> mk_appl_term(a) |> mk_appl_term(b)
         neg_eq = neg_term() |> mk_appl_term(eq)
         tableaux([neg_eq | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
@@ -478,7 +486,7 @@ defmodule THOU.Prover do
         t = type(goal: g, args: [])
 
         if unknown_type?(t) do
-          Logger.debug("equality unknown type (treated as atom)")
+          Logger.notice("applying \"Atom\"")
 
           handle_atom(
             formula,
@@ -491,7 +499,8 @@ defmodule THOU.Prover do
             incomplete?
           )
         else
-          Logger.debug("equality other atomic types")
+          Logger.notice("applying \"=ι\"")
+
           p = mk_uniqe_var(mk_type(:o, [t]))
           p_term = mk_term(p)
           p_a = mk_appl_term(p_term, a)
@@ -517,7 +526,7 @@ defmodule THOU.Prover do
         t = type(goal: g, args: [])
 
         if unknown_type?(t) do
-          Logger.debug("negated equality unknown type (treated as atom)")
+          Logger.notice("applying \"Atom\"")
 
           handle_atom(
             formula,
@@ -530,7 +539,8 @@ defmodule THOU.Prover do
             incomplete?
           )
         else
-          Logger.debug("negated equality other atomic types")
+          Logger.notice("applying \"¬=ι\"")
+
           p = mk_uniqe_var(mk_type(:o, [t]))
           p_term = mk_term(p)
           p_a = mk_appl_term(p_term, a)
@@ -554,7 +564,7 @@ defmodule THOU.Prover do
 
       # equality (function types) -> functional extensionality
       [typed_equality(a, b, type) | rest] ->
-        Logger.debug("equality function")
+        Logger.notice("applying \"=(α⇾β)\"")
         [first_arg_type | rest_arg_types] = get_arg_types(type)
         goal_type = mk_type(get_goal_type(type), rest_arg_types)
         x = mk_uniqe_var(first_arg_type)
@@ -572,7 +582,7 @@ defmodule THOU.Prover do
 
       # negated equality (function types) -> negated functional extensionality
       [negated(typed_equality(a, b, type)) | rest] ->
-        Logger.debug("negated equality function")
+        Logger.notice("applying \"¬=(α⇾β)\"")
         [first_arg_type | rest_arg_types] = get_arg_types(type)
         goal_type = mk_type(get_goal_type(type), rest_arg_types)
         x = mk_uniqe_var(first_arg_type)
@@ -602,12 +612,12 @@ defmodule THOU.Prover do
 
       # disjunction
       [disjunction(a, b) | rest] ->
-        Logger.debug("disjunction")
+        Logger.notice("applying \"∨\"")
         branch(a, b, rest, clause, constraints, max_inst, instantiation_count, incomplete?)
 
       # negated disjunction
       [negated(disjunction(a, b)) | rest] ->
-        Logger.debug("negated disjunction")
+        Logger.notice("applying \"¬∨\"")
 
         tableaux(
           [sem_negate(a), sem_negate(b) | rest],
@@ -620,12 +630,12 @@ defmodule THOU.Prover do
 
       # conjunction
       [conjunction(a, b) | rest] ->
-        Logger.debug("conjunction")
+        Logger.notice("applying \"∧\"")
         tableaux([a, b | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
 
       # negated conjunction
       [negated(conjunction(a, b)) | rest] ->
-        Logger.debug("negated conjunction")
+        Logger.notice("applying \"¬∧\"")
 
         branch(
           sem_negate(a),
@@ -640,7 +650,7 @@ defmodule THOU.Prover do
 
       # implication
       [implication(a, b) | rest] ->
-        Logger.debug("implication")
+        Logger.notice("applying \"⊃\"")
 
         branch(
           sem_negate(a),
@@ -655,7 +665,7 @@ defmodule THOU.Prover do
 
       # negated implication
       [negated(implication(a, b)) | rest] ->
-        Logger.debug("negated implication")
+        Logger.notice("applying \"¬⊃\"")
 
         tableaux(
           [a, sem_negate(b) | rest],
@@ -668,7 +678,7 @@ defmodule THOU.Prover do
 
       # equivalence
       [equivalence(a, b) | rest] ->
-        Logger.debug("equivalence")
+        Logger.notice("applying \"≡\"")
 
         branch(
           [a, b],
@@ -683,7 +693,7 @@ defmodule THOU.Prover do
 
       # negated equivalence
       [negated(equivalence(a, b)) | rest] ->
-        Logger.debug("negated equivalence")
+        Logger.notice("applying \"¬≡\"")
 
         branch(
           [sem_negate(a), b],
@@ -702,7 +712,7 @@ defmodule THOU.Prover do
 
       # universal quantification -> fresh variable (can be repeated!)
       [universal_quantification(body) = term | rest] ->
-        Logger.debug("universal quantification")
+        Logger.notice("applying \"Π\"")
         count = Map.get(instantiation_count, term, 0)
 
         if count < max_inst do
@@ -721,13 +731,13 @@ defmodule THOU.Prover do
           )
         else
           # skip the universal quantification - upper bound of instantiations reached
-          Logger.debug("instantiation limit exceeded")
+          Logger.info("instantiation limit exceeded")
           tableaux(rest, max_inst, clause, constraints, instantiation_count, true)
         end
 
       # negated universal quantification -> skolemization
       [negated(universal_quantification(body)) | rest] ->
-        Logger.debug("negated universal quantification")
+        Logger.notice("applying \"¬Π\"")
 
         type(args: [type]) = get_term_type(body)
 
@@ -748,7 +758,7 @@ defmodule THOU.Prover do
 
       # existential quantification -> skolemization
       [existential_quantification(body) | rest] ->
-        Logger.debug("existential quantification")
+        Logger.notice("applying \"Σ\"")
 
         type(args: [type]) = get_term_type(body)
 
@@ -763,7 +773,7 @@ defmodule THOU.Prover do
 
       # negated existential quantification -> fresh variable (can be repeated!)
       [negated(existential_quantification(body)) = term | rest] ->
-        Logger.debug("negated existential quantification")
+        Logger.notice("applying \"¬Σ\"")
         count = Map.get(instantiation_count, term, 0)
 
         if count < max_inst do
@@ -782,25 +792,25 @@ defmodule THOU.Prover do
           )
         else
           # skip the negated existential quantification - upper bound of instantiations reached
-          Logger.debug("instantiation limit exceeded")
+          Logger.info("instantiation limit exceeded")
           tableaux(rest, max_inst, clause, constraints, instantiation_count, true)
         end
     end
   end
 
   defp as_assignment({:closed, _}) do
-    "All branches closed -> unsatisfiable" |> Logger.debug()
+    "All branches closed -> unsatisfiable" |> Logger.notice()
     :unsat
   end
 
   defp as_assignment({:open, clause, constraints}) do
-    "Some branches still open -> countermodel exists" |> Logger.debug()
+    "Some branches still open -> countermodel exists" |> Logger.notice()
 
     pp_assignment(clause) <> " || " <> pp_constraints(constraints)
   end
 
   defp as_assignment({:incomplete, clause, constraints}) do
-    "Result unknown due to prover incompleteness" |> Logger.debug()
+    "Result unknown due to prover incompleteness" |> Logger.notice()
 
     {:unknown, pp_assignment(clause) <> " || " <> pp_constraints(constraints)}
   end

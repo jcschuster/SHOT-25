@@ -30,6 +30,10 @@ LoggerHelper.set_logger_warning()
 ```
 
 ```elixir
+parse "! [X : $i] : p @ X"
+```
+
+```elixir
 parse("((p @ a) & (p @ b)) => (p @ (a & b))") |> prove
 ```
 

@@ -15,7 +15,8 @@ import HOL.Data
 alias THOU.Runner
 alias THOU.Parser.{Parser.Context, TPTP}
 
-Logger.configure(level: :error)
+Logger.configure(level: :info)
+Logger.put_application_level(:hol, :error)
 ```
 
 ## Parsing TPTP
@@ -96,6 +97,53 @@ Runner.prove_file "Problems/ALG/ALG001^5.p"  # Rating: 0.00
 
 ```elixir
 "(![P : $o>$o]: ((P @ (a & b)) => (P @ (b & a))))" |> parse |> prove
+```
+
+```elixir
+"$true & $true = $true" |> parse
+```
+
+```elixir
+"
+((![X:$o] : (X = $true)) => $false)
+"
+  |> parse
+  |> prove
+```
+
+```elixir
+"
+(
+  (
+    (a = $true & b = $true) |
+    (a = $true & b = $false) |
+    (a = $false & b = $true) |
+    (a = $false & b = $false)
+  ) &
+  (
+    (($true & $true) = $true) &
+    (($false & $false) = $false) &
+    (($true & $false) = $false) &
+    (($false & $true) = $false)
+  )
+)
+=>
+(![P : $o>$o]: ((P @ (a & b)) <=> (P @ (b & a))))
+"
+  |> parse
+  |> prove
+```
+
+```elixir
+"(![X : $o]: (![Y : $o]: ((X <=> Y) <= (![P : $o > $o]: ((P @ X) => (P @ Y))))))"
+ |> parse
+ |> prove
+```
+
+```elixir
+"(![X : $o]: (![Y : $o]: ((X <=> Y) => (![P : $o > $o]: ((P @ X) => (P @ Y))))))"
+ |> parse
+ |> prove
 ```
 
 ```elixir
