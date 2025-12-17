@@ -38,8 +38,20 @@ defmodule THOU.Parser.TPTP do
   def term_to_tptp(pi_const(_)), do: "!"
   def term_to_tptp(sigma_const(_)), do: "?"
   def term_to_tptp(declaration(kind: :bv, name: name)), do: "BV__#{name}"
+
+  def term_to_tptp(declaration(kind: :co, name: "__" <> name)) do
+    "skolem_" <> String.downcase(name)
+  end
+
   def term_to_tptp(declaration(kind: :co, name: name)), do: String.downcase(name)
-  def term_to_tptp(declaration(kind: :fv, name: name)), do: String.capitalize(name)
+
+  def term_to_tptp(declaration(kind: :fv, name: name)) when is_binary(name) do
+    String.capitalize(name)
+  end
+
+  def term_to_tptp(declaration(kind: :fv, name: name)) do
+    "VAR_" <> String.replace(inspect(name), ~r/[^0-9]/, "")
+  end
 
   def term_to_tptp(nor_term()), do: "~|"
   def term_to_tptp(nand_term()), do: "~&"

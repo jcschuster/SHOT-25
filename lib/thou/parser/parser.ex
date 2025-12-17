@@ -194,6 +194,12 @@ defmodule THOU.Parser.Parser do
   defp parse_conjunction_op(lhs, tokens, ctx), do: {lhs, tokens, ctx}
 
   # Level 3: Unitary (~), Quantifiers (!, ?), Equality (=), Application (@)
+
+  defp parse_unitary([{:not, _} | [{:app, _} | _]] = tokens, ctx), do: parse_equality(tokens, ctx)
+
+  defp parse_unitary([{:not, _} | [{:rparen, _} | _]] = tokens, ctx),
+    do: parse_equality(tokens, ctx)
+
   defp parse_unitary([{:not, _} | rest], ctx) do
     {term, rest2, ctx2} = parse_unitary(rest, ctx)
     {{:pre_app, {:pre_const, "¬", type_oo()}, term, type_o()}, rest2, ctx2}
