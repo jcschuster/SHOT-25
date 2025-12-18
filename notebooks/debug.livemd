@@ -26,21 +26,68 @@ alias THOU.Parser.Parser.Context
 alias THOU.Parser.TPTP
 alias THOU.Runner
 
-LoggerHelper.set_logger_warning()
+Logger.configure(level: :info)
+Logger.put_application_level(:hol, :error)
 ```
 
 ```elixir
-parse "! [X : $i] : p @ X"
+parse "(~) @ ? [P : $i] : X"
 ```
 
 ```elixir
-parse("((p @ a) & (p @ b)) => (p @ (a & b))") |> prove
+# Logger.configure(level: :error)
+
+# Path.wildcard("C:/Users/johan/Downloads/mirabelle-THF-output-3/mirabelle-output/TH0*/**/*.p")
+# |> Task.async_stream(fn path ->
+#     IO.puts("proving file #{path}")
+#     output = ExUnit.CaptureIO.capture_io(fn ->
+#       Runner.prove_file(path, false)
+#     end)
+#     output
+#   end,
+#   timeout: 10_000,
+#   on_timeout: :kill_task
+# )
+# |> Enum.reduce(%{completed: 0, timeout: 0, error: 0, results: %{}, reasons: []}, fn result, acc ->
+#   case result do
+#     {:ok, output} ->
+#       prover_res = cond do
+#         output =~ "CounterSatisfiable" -> "CounterSatisfiable"
+#         output =~ "Theorem" -> "Theorem"
+#         true -> "Unknown"
+#       end
+#       new_results = Map.put(acc.results, prover_res, Map.get(acc.results, prover_res, 0) + 1)
+#       %{acc | completed: acc[:completed] + 1, results: new_results}
+#     {:exit, :timeout} ->
+#       IO.puts("timeout")
+#       %{acc | timeout: acc[:timeout] + 1}
+#     {:exit, reason} ->
+#       IO.puts("crashed: #{inspect reason}")
+#       %{acc | error: acc[:error] + 1, reasons: acc[:reasons] ++ [reason]}
+#   end
+# end)
+
+# %{
+#   timeout: 361,
+#   error: 0,
+#   completed: 599,
+#   results: %{"CounterSatisfiable" => 60, "Theorem" => 76, "Unknown" => 463},
+#   reasons: []
+# }
 ```
 
 ## TPTP Files
 
 ```elixir
 #System.put_env("TPTP_ROOT", "D:/TPTP-v9.2.1")
+```
+
+```elixir
+parse "A @ B @ C"
+```
+
+```elixir
+TPTP.parse_file "Axioms/CSR005^0.ax"
 ```
 
 ```elixir
@@ -51,7 +98,7 @@ PrettyPrint.pp_term(formula)
 ```
 
 ```elixir
-Runner.prove_file "Problems/ALG/ALG001^5.p"
+Runner.prove_file "Problems/CSR/CSR119^3.p"
 ```
 
 ## Sanity Checks

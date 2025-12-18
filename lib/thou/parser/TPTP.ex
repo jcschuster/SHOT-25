@@ -235,12 +235,16 @@ defmodule THOU.Parser.TPTP do
 
   defp collect_quantified_vars(_quantifier, term, acc), do: {acc, term}
 
-  def parse_file(problem) do
+  def parse_file(problem, is_tptp \\ true) do
     path =
-      if System.get_env("TPTP_ROOT") == nil do
+      if is_tptp and System.get_env("TPTP_ROOT") == nil do
         raise "Error: TPTP_ROOT environment variable is not set"
       else
-        Path.join(System.get_env("TPTP_ROOT"), problem)
+        if is_tptp do
+          Path.join(System.get_env("TPTP_ROOT"), problem)
+        else
+          problem
+        end
       end
 
     case File.read(path) do
@@ -298,25 +302,40 @@ defmodule THOU.Parser.TPTP do
         new_types = Map.put(problem.types, entry_name, type_struct)
         process_tokens(remaining_tokens, %{problem | types: new_types})
 
-      :definition ->
-        ctx = build_context(problem)
-        term = Parser.parse_tokens(formula_tokens, ctx)
-        new_defs = problem.definitions ++ [{name, term}]
-        process_tokens(remaining_tokens, %{problem | definitions: new_defs})
-
-      :axiom ->
-        ctx = build_context(problem)
-        term = Parser.parse_tokens(formula_tokens, ctx)
-        new_axioms = problem.axioms ++ [{name, term}]
-        process_tokens(remaining_tokens, %{problem | axioms: new_axioms})
-
-      :conjecture ->
-        ctx = build_context(problem)
-        term = Parser.parse_tokens(formula_tokens, ctx)
-        process_tokens(remaining_tokens, %{problem | conjecture: {name, term}})
-
       _ ->
-        process_tokens(remaining_tokens, problem)
+        try do
+          ctx = build_context(problem)
+          term = Parser.parse_tokens(formula_tokens, ctx)
+
+          new_problem =
+            case role do
+              :definition ->
+                %{problem | definitions: problem.definitions ++ [{name, term}]}
+
+              :axiom ->
+                %{problem | axioms: problem.axioms ++ [{name, term}]}
+
+              :conjecture ->
+                %{problem | conjecture: {name, term}}
+
+              _ ->
+                problem
+            end
+
+          process_tokens(remaining_tokens, new_problem)
+        rescue
+          e ->
+            # === DEBUGGING TRAP ===
+            IO.puts("\n========================================")
+            IO.puts("CRASH DETECTED PARSING: #{name}")
+            IO.puts("TYPES: #{inspect(problem.types, limit: :infinity)}")
+            IO.puts("ROLE: #{role}")
+            IO.puts("TOKENS: #{inspect(formula_tokens, limit: :infinity)}")
+            IO.puts("========================================\n")
+
+            # Re-raise the error so you still get the stack trace
+            reraise e, __STACKTRACE__
+        end
     end
   end
 

@@ -290,7 +290,12 @@ defmodule THOU.Parser.Parser do
         Context.put_var(acc, name, type)
       end)
 
-    {body_pre_term, rest_tokens, body_ctx} = parse_formula(body_tokens, inner_ctx)
+    # {body_pre_term, rest_tokens, body_ctx} = parse_formula(body_tokens, inner_ctx)
+    {body_pre_term, rest_tokens, body_ctx} =
+      case body_tokens do
+        [{:lparen, _} | _] -> parse_atomic(body_tokens, inner_ctx)
+        _ -> parse_formula(body_tokens, inner_ctx)
+      end
 
     final_ctx = Context.add_constraint(body_ctx, get_pre_type(body_pre_term), type_o())
 
@@ -375,13 +380,18 @@ defmodule THOU.Parser.Parser do
     inner_ctx = Enum.reduce(vars, ctx, fn {n, t}, c -> Context.put_var(c, n, t) end)
 
     [{:rbracket, _}, {:colon, _} | body_tokens] = rest_after_vars
-    {body_term, rest_tokens, body_ctx} = parse_formula(body_tokens, inner_ctx)
+
+    {body_pre_term, rest_tokens, body_ctx} =
+      case body_tokens do
+        [{:lparen, _} | _] -> parse_atomic(body_tokens, inner_ctx)
+        _ -> parse_formula(body_tokens, inner_ctx)
+      end
 
     final_ctx = %{ctx | constraints: body_ctx.constraints}
 
     term =
       Enum.reverse(vars)
-      |> Enum.reduce(body_term, fn {name, type}, acc ->
+      |> Enum.reduce(body_pre_term, fn {name, type}, acc ->
         body_type = get_pre_type(acc)
         abs_type = mk_type(body_type, [type])
         {:pre_abs, name, type, acc, abs_type}
@@ -512,6 +522,18 @@ defmodule THOU.Parser.Parser do
     {{:pre_const, "~&", type_ooo()}, rest, ctx}
   end
 
+  defp parse_atomic([{:forall, _} | [{:lbracket, _} | _] = rest], ctx),
+    do: parse_quantifier(:pi, rest, ctx)
+
+  defp parse_atomic([{:exists, _} | [{:lbracket, _} | _] = rest], ctx),
+    do: parse_quantifier(:sigma, rest, ctx)
+
+  defp parse_atomic([{:pi, _} | [{:lparen, _}, {:lambda, _} | _] = rest], ctx),
+    do: parse_quantifier(:pi, rest, ctx)
+
+  defp parse_atomic([{:sigma, _} | [{:lparen, _}, {:lambda, _} | _] = rest], ctx),
+    do: parse_quantifier(:sigma, rest, ctx)
+
   defp parse_atomic([{:pi, _} | rest], ctx) do
     alpha = mk_new_unknown_type()
     pred_type = mk_type(:o, [alpha])
@@ -519,7 +541,21 @@ defmodule THOU.Parser.Parser do
     {{:pre_const, "Π", type}, rest, ctx}
   end
 
+  defp parse_atomic([{:forall, _} | rest], ctx) do
+    alpha = mk_new_unknown_type()
+    pred_type = mk_type(:o, [alpha])
+    type = mk_type(:o, [pred_type])
+    {{:pre_const, "Π", type}, rest, ctx}
+  end
+
   defp parse_atomic([{:sigma, _} | rest], ctx) do
+    alpha = mk_new_unknown_type()
+    pred_type = mk_type(:o, [alpha])
+    type = mk_type(:o, [pred_type])
+    {{:pre_const, "Σ", type}, rest, ctx}
+  end
+
+  defp parse_atomic([{:exists, _} | rest], ctx) do
     alpha = mk_new_unknown_type()
     pred_type = mk_type(:o, [alpha])
     type = mk_type(:o, [pred_type])

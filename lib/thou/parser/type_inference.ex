@@ -39,12 +39,21 @@ defmodule THOU.Parser.TypeInference do
   def apply_subst(other, _), do: other
 
   defp unify(t, t, subst), do: subst
+  defp unify(g, type(goal: g, args: []), subst), do: subst
+  defp unify(type(goal: g, args: []), g, subst), do: subst
 
   defp unify(g1, g2, subst) when is_atom(g1) and is_atom(g2) do
     cond do
-      unknown_type?(g1) -> Map.put(subst, g1, g2) |> map_substitutions(g1, g2)
-      unknown_type?(g2) -> Map.put(subst, g2, g1) |> map_substitutions(g2, g1)
-      true -> raise("Type Error: Cannot unify #{inspect(g1)} with #{inspect(g2)}.")
+      unknown_type?(g1) ->
+        Map.put(subst, g1, g2) |> map_substitutions(g1, g2)
+
+      unknown_type?(g2) ->
+        Map.put(subst, g2, g1) |> map_substitutions(g2, g1)
+
+      true ->
+        raise(
+          "Type Error: Cannot unify #{inspect(g1)} with #{inspect(g2)} under substitutions #{inspect(subst)}."
+        )
     end
   end
 
@@ -58,7 +67,9 @@ defmodule THOU.Parser.TypeInference do
         Map.put(subst, g2, g1) |> map_substitutions(g2, g1)
 
       true ->
-        raise("Type Error: Cannot unify #{inspect(g1)} with #{inspect(t2)}.")
+        raise(
+          "Type Error: Cannot unify #{inspect(g1)} with #{inspect(t2)} under substitutions #{inspect(subst)}."
+        )
     end
   end
 
@@ -83,20 +94,28 @@ defmodule THOU.Parser.TypeInference do
 
       length(args1) < length(args2) ->
         if not unknown_type?(g1) do
-          raise("Type Error: Cannot unify #{inspect(t1)} with #{inspect(t2)}.")
+          raise(
+            "Type Error: Cannot unify #{inspect(t1)} with #{inspect(t2)} under substitutions #{inspect(subst)}."
+          )
         else
           if occurs?(g1, t2), do: raise("Type Error: Recursive type check failed (Occurs check)")
           new_g1_type = mk_type(g2, Enum.drop(args2, length(args1)))
-          Map.put(subst, t1, type(goal: new_g1_type, args: args1))
+
+          # Map.put(subst, t1, type(goal: new_g1_type, args: args1))
+          unify(g1, new_g1_type, subst)
         end
 
       length(args1) > length(args2) ->
         if not unknown_type?(g2) do
-          raise("Type Error: Cannot unify #{inspect(t1)} with #{inspect(t2)}.")
+          raise(
+            "Type Error: Cannot unify #{inspect(t1)} with #{inspect(t2)} under substitutions #{inspect(subst)}."
+          )
         else
           if occurs?(g2, t1), do: raise("Type Error: Recursive type check failed (Occurs check)")
           new_g2_type = mk_type(g1, Enum.drop(args1, length(args2)))
-          Map.put(subst, t2, type(goal: new_g2_type, args: args2))
+
+          # Map.put(subst, t2, type(goal: new_g2_type, args: args2))
+          unify(g2, new_g2_type, subst)
         end
     end
   end

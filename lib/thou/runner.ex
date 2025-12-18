@@ -5,9 +5,9 @@ defmodule THOU.Runner do
   @doc """
   Parses a THF file and attempts to prove the conjecture found within it.
   """
-  def prove_file(path) do
+  def prove_file(path, is_tptp \\ true) do
     # 1. Parse the file into a Problem struct
-    case TPTP.parse_file(path) do
+    case TPTP.parse_file(path, is_tptp) do
       {:ok, problem} ->
         run_prover(problem)
 
