@@ -16,7 +16,7 @@ defmodule THOU.Runner do
     end
   end
 
-  defp run_prover(problem) do
+  def run_prover(problem) do
     axiom_terms = Enum.map(problem.axioms, fn {_name, term} -> term end)
     definition_terms = Enum.map(problem.definitions, fn {_name, term} -> term end)
 

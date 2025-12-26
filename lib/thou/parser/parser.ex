@@ -202,7 +202,8 @@ defmodule THOU.Parser.Parser do
 
   defp parse_unitary([{:not, _} | rest], ctx) do
     {term, rest2, ctx2} = parse_unitary(rest, ctx)
-    {{:pre_app, {:pre_const, "¬", type_oo()}, term, type_o()}, rest2, ctx2}
+    ctx3 = constrain(ctx2, term, type_o())
+    {{:pre_app, {:pre_const, "¬", type_oo()}, term, type_o()}, rest2, ctx3}
   end
 
   defp parse_unitary([{:forall, _} | rest], ctx), do: parse_quantifier(:pi, rest, ctx)
