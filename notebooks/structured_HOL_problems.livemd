@@ -1,0 +1,642 @@
+# A Structured Set of Higher-Order Problems - Section 5
+
+```elixir
+Mix.install([
+  {:thou, path: Path.join(__DIR__, "..")},
+  {:kino, "~> 0.17.0"}
+])
+```
+
+## Section
+
+```elixir
+import HOL.Data
+import THOU.Prover
+import THOU.Parser.Parser
+import THOU.Parser.TPTP
+import THOU.Runner
+alias THOU.Parser.Parser.Context
+
+Logger.configure(level: :error)
+```
+
+```elixir
+form =
+  Kino.Control.form(
+    [
+      name: Kino.Input.checkbox("Debug")
+    ],
+    report_changes: true
+  )
+
+Kino.listen(form, fn event ->
+  if event.data.name == true do
+    Logger.configure(level: :info)
+    Logger.put_application_level(:hol, :error)
+  else
+    Logger.configure(level: :error)
+  end
+end)
+
+form
+```
+
+## Definitions
+
+```elixir
+defmodule MyDefs do
+  def leibnitz_eq(t) do
+    type = String.replace(t, "$", "")
+      |> String.replace("(", "OPEN")
+      |> String.replace(")", "CLOSE")
+      |> String.replace(">", "TO")
+    "thf(leibnitz_eq_#{type},definition," <> "\n\t" <>
+    "leibnitz_eq_#{type} =" <> "\n\t\t" <>
+    "^[X : #{t}, Y : #{t}]: ![P : #{t}>$o]: P @ X <=> P @ Y" <> "\n" <>
+    ").\n"
+  end
+  
+  def andrews_eq(t) do
+    type = String.replace(t, "$", "")
+      |> String.replace("(", "OPEN")
+      |> String.replace(")", "CLOSE")
+      |> String.replace(">", "TO")
+    "thf(andrews_eq_#{type},definition," <> "\n\t" <>
+    "andrews_eq_#{type} =" <> "\n\t\t" <>
+    "^[X : #{t}, Y : #{t}]:" <> "\n\t\t\t" <>
+    "![Q : #{t}>#{t}>$o]: (![Z : #{t}]: Q @ Z @ Z) => (Q @ X @ Y)" <> "\n" <>
+    ").\n"
+  end
+  
+  def extens_eq(t1, t2) do
+    type1 = String.replace(t1, "$", "")
+      |> String.replace("(", "OPEN")
+      |> String.replace(")", "CLOSE")
+      |> String.replace(">", "TO")
+    type2 = String.replace(t2, "$", "")
+      |> String.replace("(", "OPEN")
+      |> String.replace(")", "CLOSE")
+      |> String.replace(">", "TO")
+    "thf(extens_eq_#{type1}_#{type2},definition," <> "\n\t" <>
+    "extens_eq_#{type1}_#{type2} =" <> "\n\t\t" <>
+    "^[X : #{t1}>#{t2}, Y : #{t1}>#{t2}]: ![V : #{t1}]: X @ V = Y @ V" <> "\n" <>
+    ").\n"
+  end
+end
+```
+
+```elixir
+import MyDefs
+```
+
+## 5.1 Properties of Equality
+
+Example 6a)
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("$i") <>
+"thf(leibnitz_eq_reflexive,conjecture,
+  ![X : $i] : leibnitz_eq_i @ X @ X
+)."
+)
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("$i") <>
+"thf(andrews_eq_reflexive,conjecture,
+  ![X : $i] : andrews_eq_i @ X @ X
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(extens_eq("$i", "$i") <>
+"thf(extens_eq_reflexive,conjecture,
+  ![X : $i>$i] : extens_eq_i_i @ X @ X
+).")
+
+run_prover(problem)
+```
+
+Example 6b)
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("$i") <>
+"
+thf(leibnitz_eq_symm,conjecture,
+  ![X : $i, Y : $i]: ((leibnitz_eq_i @ X @ Y) => (leibnitz_eq_i @ Y @ X))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("$i") <>
+"thf(andrews_eq_symm,conjecture,
+  ![X : $i, Y : $i]: ((andrews_eq_i @ X @ Y) => (andrews_eq_i @ Y @ X))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(extens_eq("$i", "$i") <>
+"thf(extens_eq_symm,conjecture,
+  ![X : $i>$i, Y : $i>$i]: ((extens_eq_i_i @ X @ Y) => (extens_eq_i_i @ Y @ X))
+).")
+
+run_prover(problem)
+```
+
+Example 6c)
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("$i") <>
+"thf(leibnitz_eq_trans,conjecture,
+  ![X : $i, Y : $i, Z : $i]: (
+    ((leibnitz_eq_i @ X @ Y) & (leibnitz_eq_i @ Y @ Z))
+    =>
+    (leibnitz_eq_i @ X @ Z)
+  )
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("$i") <>
+"thf(andrews_eq_trans,conjecture,
+  ![X : $i, Y : $i, Z : $i]: (
+    ((andrews_eq_i @ X @ Y) & (andrews_eq_i @ Y @ Z))
+    =>
+    (andrews_eq_i @ X @ Z)
+  )
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(extens_eq("$i", "$i") <>
+"thf(extens_eq_trans,conjecture,
+  ![X : $i>$i, Y : $i>$i, Z : $i>$i]: (
+    ((extens_eq_i_i @ X @ Y) & (extens_eq_i_i @ Y @ Z))
+    =>
+    (extens_eq_i_i @ X @ Z)
+  )
+).")
+
+run_prover(problem)
+```
+
+Example 7a)
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("$i") <>
+"thf(leibnitz_congruent_i,conjecture,
+  ![X : $i, Y : $i, F : $i>$i]: (
+    (leibnitz_eq_i @ X @ Y) => (leibnitz_eq_i @ (F @ X) @ (F @ Y))
+  )
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("$i") <>
+"thf(andrews_congruent_i,conjecture,
+  ![X : $i, Y : $i, F : $i>$i]: (
+    (andrews_eq_i @ X @ Y) => (andrews_eq_i @ (F @ X) @ (F @ Y))
+  )
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(extens_eq("$i", "$i") <>
+"thf(extens_congruent_i,conjecture,
+  ![X : $i>$i, Y : $i>$i, F : ($i>$i)>$i>$i]: (
+    (extens_eq_i_i @ X @ Y) => (extens_eq_i_i @ (F @ X) @ (F @ Y))
+  )
+).")
+
+run_prover(problem)
+```
+
+Example 7b)
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("$i") <>
+"thf(leibnitz_congruent_o,conjecture,
+  ![X : $i, Y : $i, P : $i>$o]: (
+    ((leibnitz_eq_i @ X @ Y) & (P @ X)) => (P @ Y)
+  )
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("$i") <>
+"thf(andrews_congruent_o,conjecture,
+  ![X : $i, Y : $i, P : $i>$o]: (
+    ((andrews_eq_i @ X @ Y) & (P @ X)) => (P @ Y)
+  )
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(extens_eq("$i", "$i") <>
+"thf(extens_congruent_i,conjecture,
+  ![X : $i, Y : $i, P : $i>$o]: (
+    ((extens_eq_i @ X @ Y) & (P @ X)) => (P @ Y)
+  )
+).")
+
+run_prover(problem)
+```
+
+Example 8
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("$i") <>
+"thf(leibnitz_implies_primitive,conjecture,
+  ![X : $i, Y : $i]: (
+    (leibnitz_eq_i @ X @ Y) => (X = Y)
+  )
+).")
+
+run_prover(problem)
+```
+
+Example 9a)
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("$i") <> leibnitz_eq("($i>$i)") <>
+"thf(leibnitz_trivial_extensional,conjecture,
+![F : $i>$i, G: $i>$i]:
+  ((leibnitz_eq_OPENiTOiCLOSE @ F @ G) => (![X : $i]: (leibnitz_eq_i @ (F @ X) @ (G @ X))))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("$i") <> andrews_eq("($i>$i)") <>
+"thf(andrews_trivial_extensional,conjecture,
+![F : $i>$i, G: $i>$i]:
+  ((andrews_eq_OPENiTOiCLOSE @ F @ G) => (![X : $i]: (andrews_eq_i @ (F @ X) @ (G @ X))))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+"![F : $i>$i, G : $i>$i]: ((F = G) => (![X : $i]: ((F @ X) = (G @ X))))"
+  |> parse |> prove
+```
+
+Example 9b)
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("$o") <>
+"thf(leibnitz_trivial_extensional,conjecture,
+![A : $o, B : $o]: ((leibnitz_eq_o @ A @ B) => (A <=> B))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("$o") <>
+"thf(andrews_trivial_extensional,conjecture,
+![A : $o, B : $o]: ((andrews_eq_o @ A @ B) => (A <=> B))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+"![A : $o, B : $o]: ((A = B) => (A <=> B))"
+  |> parse |> prove
+```
+
+Example 10
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("$o") <>
+"thf(leibnitz_nontrivial_extensional,conjecture,
+![A : $o, B : $o]: ((A <=> B) => (leibnitz_eq_o @ A @ B))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("$o") <>
+"thf(andrews_nontrivial_extensional,conjecture,
+![A : $o, B : $o]: ((A <=> B) => (andrews_eq_o @ A @ B))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+"![A : $o, B : $o]: ((A <=> B) => (A = B))"
+  |> parse |> prove
+```
+
+Example 11
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("$i") <> leibnitz_eq("($i>$i)") <>
+"thf(leibnitz_nontrivial_extensional,conjecture,
+![F : $i>$i, G : $i>$i]:
+  (![X : $i]: (
+    (leibnitz_eq_i @ (F @ X) @ (G @ X))
+    =>
+    (leibnitz_eq_OPENiTOiCLOSE @ F @ G)
+  ))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("$i") <> andrews_eq("($i>$i)") <>
+"thf(andrews_nontrivial_extensional,conjecture,
+![F : $i>$i, G : $i>$i]:
+  (![X : $i]: (
+    (andrews_eq_i @ (F @ X) @ (G @ X))
+    =>
+    (andrews_eq_OPENiTOiCLOSE @ F @ G)
+  ))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+IO.puts extens_eq("($i>$i)", "$i")
+```
+
+```elixir
+{:ok, problem} = parse_string(extens_eq("$i", "$i") <> extens_eq("$i", "($i>$i)") <>
+"thf(extens_nontrivial_extensional,conjecture,
+![F : $i>$i>$i, G : $i>$i>$i]:
+  (![X : $i]: (
+    (extens_eq_i_i @ (F @ X) @ (G @ X))
+    =>
+    (extens_eq_i_OPENiTOiCLOSE @ F @ G)
+  ))
+).")
+
+#run_prover(problem)
+# -> timeout
+```
+
+```elixir
+"![F : $i>$i, G : $i>$i]: ((![X : $i]: ((F @ X) = (G @ X))) => F = G)"
+  |> parse |> prove
+```
+
+## 5.2 Extensionality
+
+Example 12
+
+```elixir
+ctx = Context.new()
+  |> Context.put_const("f", mk_type(:i, [mk_type(:i)]))
+
+"(p @ (^[X : $i] : f @ X)) => p @ f"
+  |> parse(ctx) |> prove
+```
+
+Example 13
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("$i") <>
+"thf(conj,conjecture,
+((![X : $i]: (leibnitz_eq_i @ (f @ X) @ X)) & (p @ ^[X : $i] : X)) => p @ ^[X : $i]: f @ X
+).")
+
+#run_prover(problem)
+# -> timeout
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("$i") <>
+"thf(f_type,type, f : $i>$i).
+thf(conj,conjecture,
+((![X : $i]: (andrews_eq_i @ (f @ X) @ X)) & (p @ ^[X : $i] : X)) => p @ ^[X : $i]: f @ X
+).")
+
+run_prover(problem)
+```
+
+```elixir
+ctx = Context.new() |> Context.put_const("f", mk_type(:i, [mk_type(:i)]))
+
+"(![X : $i]: ((f @ X) = X)) & (p @ (^[X : $i] : X)) => (p @ (^[X : $i]: f @ X))"
+  |> parse(ctx) |> prove
+```
+
+Example 14
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("$i") <>
+"thf(f_type,type, f : $i>$i).
+thf(conj,conjecture,
+((![X : $i]: (leibnitz_eq_i @ (f @ X) @ X)) & (p @ ^[X : $i] : X)) => p @ f
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("$i") <>
+"thf(f_type,type, f : $i>$i).
+thf(conj,conjecture,
+((![X : $i]: (andrews_eq_i @ (f @ X) @ X)) & (p @ ^[X : $i] : X)) => p @ f
+).")
+
+run_prover(problem)
+```
+
+```elixir
+ctx = Context.new() |> Context.put_const("f", mk_type(:i, [mk_type(:i)]))
+
+"(![X : $i]: ((f @ X) = X)) & (p @ (^[X : $i] : X)) => (p @ f)"
+  |> parse(ctx) |> prove
+```
+
+Example 15
+
+```elixir
+"p @ (a & b) => p @ (b & a)"
+  |> parse |> prove
+```
+
+```elixir
+"a & b & p @ a => p @ b"
+  |> parse |> prove
+```
+
+Example 16
+
+```elixir
+"p @ a & p @ b => p @ (a & b)"
+  |> parse |> prove
+```
+
+Example 17
+
+```elixir
+"~(a = (~a))" |> parse |> prove
+```
+
+Example 18
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("$i") <>
+"thf(conj,conjecture,
+leibnitz_eq_i @ (h @ (leibnitz_eq_i @ (h @ $true) @ (h @ $false))) @ (h @ $false)
+).")
+
+#run_prover(problem)
+# -> timeout
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("$i") <>
+"thf(h_type,type, h : $o>$i).
+thf(conj,conjecture,
+andrews_eq_i @ (h @ (andrews_eq_i @ (h @ $true) @ (h @ $false))) @ (h @ $false)
+).")
+
+run_prover(problem)
+```
+
+```elixir
+ctx = Context.new()
+  |> Context.put_const("h", mk_type(:i, [mk_type(:o)]))
+
+"(h @ ((h @ $true) = (h @ $false))) = (h @ $false)"
+  |> parse(ctx) |> prove
+```
+
+Example 19
+
+```elixir
+ctx = Context.new()
+  |> Context.put_const("p", mk_type(:o, [mk_type(:i, [mk_type(:i)])]))
+  |> Context.put_const("f", mk_type(:i, [mk_type(:o), mk_type(:i)]))
+  |> Context.put_const("a", mk_type(:o, [mk_type(:i, [mk_type(:i)])]))
+  |> Context.put_const("b", mk_type(:o))
+
+"(p @ (^[X : $i]: f @ ((a @ (^[X : $i]: f @ b @ X)) & b) @ X)) => p @ (f @ (b & (a @ (f @ b))))"
+  |> parse(ctx) |> prove
+```
+
+Example 20a)
+
+```elixir
+"![X : $o, Y : $o]: X & Y => ~(~X | ~Y)"
+  |> parse |> prove
+```
+
+Example 20b)
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("$o") <>
+"thf(conj,conjecture,
+![X : $o, Y : $o]: leibnitz_eq_o @ (X & Y) @ (~(~X | ~Y))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("$o") <>
+"thf(conj,conjecture,
+![X : $o, Y : $o]: andrews_eq_o @ (X & Y) @ (~(~X | ~Y))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+"![X : $o, Y : $o]: ((X & Y) = (~(~X | ~Y)))"
+  |> parse |> prove
+```
+
+Example 20c)
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("($o>$o>$o)") <>
+"thf(conj,conjecture,
+leibnitz_eq_OPENoTOoTOoCLOSE @ (^[U : $o, V: $o] : U & V) @ (^[X : $o, Y : $o]: ~(~X | ~Y))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("($o>$o>$o)") <>
+"thf(conj,conjecture,
+andrews_eq_OPENoTOoTOoCLOSE @ (^[U : $o, V: $o] : U & V) @ (^[X : $o, Y : $o]: ~(~X | ~Y))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+"(^[U : $o, V: $o] : U & V) = (^[X : $o, Y : $o]: ~(~X | ~Y))"
+  |> parse |> prove
+```
+
+Example 20d)
+
+```elixir
+{:ok, problem} = parse_string(leibnitz_eq("($o>$o>$o)") <>
+"thf(conj,conjecture,
+leibnitz_eq_OPENoTOoTOoCLOSE @ (&) @ (^[X : $o, Y : $o]: ~(~X | ~Y))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+{:ok, problem} = parse_string(andrews_eq("($o>$o>$o)") <>
+"thf(conj,conjecture,
+andrews_eq_OPENoTOoTOoCLOSE @ (&) @ (^[X : $o, Y : $o]: ~(~X | ~Y))
+).")
+
+run_prover(problem)
+```
+
+```elixir
+"(&) = (^[X : $o, Y : $o]: ~(~X | ~Y))"
+  |> parse |> prove
+```
+
+Example 21
+
+```elixir
+"
+(
+  (p @ ^[X : $o]: X) &
+  (p @ ^[X : $o]: ~X) &
+  (p @ ^[X : $o]: $false) &
+  (p @ ^[X : $o]: $true)
+)
+=>
+![Y : $o>$o]: p @ Y
+" |> parse |> prove
+```

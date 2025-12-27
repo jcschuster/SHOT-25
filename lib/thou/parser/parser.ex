@@ -37,7 +37,16 @@ defmodule THOU.Parser.Parser do
   end
 
   def parse_tokens(tokens, context \\ Context.new()) do
-    {pre_term, [], final_ctx} = parse_formula(tokens, context)
+    {pre_term, [], almost_final_ctx} = parse_formula(tokens, context)
+    root_type = get_pre_type(pre_term)
+
+    final_ctx =
+      if unknown_type?(root_type) do
+        Context.add_constraint(almost_final_ctx, root_type, type_o())
+      else
+        almost_final_ctx
+      end
+
     substitutions = TypeInference.solve(final_ctx.constraints)
     build_term(pre_term, substitutions)
   end

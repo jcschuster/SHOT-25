@@ -13,10 +13,12 @@ defmodule THOU.Prover do
   @max_instantiations 4
   @unification_depth 8
 
-  def sat(formulas) when is_list(formulas) do
+  def sat(formulas, definitions \\ %{})
+
+  def sat(formulas, definitions) when is_list(formulas) do
     # iterative deepening
     Enum.reduce_while(1..@max_instantiations//1, {:incomplete, [], []}, fn max_inst, _ ->
-      case tableaux(formulas, max_inst) do
+      case tableaux(formulas, definitions, max_inst) do
         {:incomplete, clause, constr} ->
           Logger.info("\nInstantiation limit exceeded, trying higher limit\n")
           {:cont, {:incomplete, clause, constr}}
@@ -28,12 +30,12 @@ defmodule THOU.Prover do
     |> as_assignment()
   end
 
-  def sat(formula), do: sat([formula])
+  def sat(formula, definitions), do: sat([formula], definitions)
 
-  def prove(conclusion, assumptions \\ []) do
+  def prove(conclusion, assumptions \\ [], definitions \\ []) do
     neg_conclusion = sem_negate(conclusion)
 
-    case sat([neg_conclusion | assumptions]) do
+    case sat([neg_conclusion | assumptions], definitions) do
       :unsat -> :valid
       {:unknown, assignment} -> {:unknown, assignment}
       assignment -> {:countersat, assignment}
@@ -67,6 +69,7 @@ defmodule THOU.Prover do
          clause,
          rest,
          constraints,
+         definitions,
          max_inst,
          instantiation_count,
          incomplete?
@@ -94,6 +97,7 @@ defmodule THOU.Prover do
         # no solutions found with current atom
         tableaux(
           rest,
+          definitions,
           max_inst,
           MapSet.put(clause, formula),
           constraints,
@@ -107,12 +111,23 @@ defmodule THOU.Prover do
   end
 
   # Which branch to check first? -> Introduce Term Orderings and Heuristics
-  defp branch(a, b, rest, clause, constraints, max_inst, instantiation_count, incomplete?) do
+  defp branch(
+         a,
+         b,
+         rest,
+         clause,
+         constraints,
+         definitions,
+         max_inst,
+         instantiation_count,
+         incomplete?
+       ) do
     left_side = List.flatten([a])
     right_side = List.flatten([b])
 
     case tableaux(
            left_side ++ rest,
+           definitions,
            max_inst,
            clause,
            constraints,
@@ -132,6 +147,7 @@ defmodule THOU.Prover do
             # closed without substitutions or constraints
             tableaux(
               right_side ++ rest,
+              definitions,
               max_inst,
               clause,
               constraints,
@@ -151,6 +167,7 @@ defmodule THOU.Prover do
 
                 case tableaux(
                        new_right_side ++ new_rest,
+                       definitions,
                        max_inst,
                        new_clause,
                        remaining,
@@ -201,6 +218,7 @@ defmodule THOU.Prover do
 
   defp tableaux(
          formulas,
+         definitions,
          # For iterative deepening
          max_inst,
          clause \\ @empty_clause,
@@ -241,7 +259,16 @@ defmodule THOU.Prover do
 
       [true_term() | rest] ->
         Logger.notice("applying \"⊤\"")
-        tableaux(rest, max_inst, clause, constraints, instantiation_count, incomplete?)
+
+        tableaux(
+          rest,
+          definitions,
+          max_inst,
+          clause,
+          constraints,
+          instantiation_count,
+          incomplete?
+        )
 
       [negated(true_term()) | _rest] ->
         Logger.notice("applying \"¬⊤\" (closing branch)")
@@ -253,7 +280,16 @@ defmodule THOU.Prover do
 
       [negated(false_term()) | rest] ->
         Logger.notice("applying \"⊤\"")
-        tableaux(rest, max_inst, clause, constraints, instantiation_count, incomplete?)
+
+        tableaux(
+          rest,
+          definitions,
+          max_inst,
+          clause,
+          constraints,
+          instantiation_count,
+          incomplete?
+        )
 
       #################################################################################
       # ATOMS
@@ -269,22 +305,7 @@ defmodule THOU.Prover do
           clause,
           rest,
           constraints,
-          max_inst,
-          instantiation_count,
-          incomplete?
-        )
-
-      # atomic formula with constant as head (no logical connective)
-      [hol_term(head: declaration(kind: :co, name: name), type: type_o()) = formula | rest]
-      when name not in signature_symbols() ->
-        Logger.notice("applying \"Atom\"")
-
-        handle_atom(
-          formula,
-          :pos,
-          clause,
-          rest,
-          constraints,
+          definitions,
           max_inst,
           instantiation_count,
           incomplete?
@@ -300,6 +321,68 @@ defmodule THOU.Prover do
           clause,
           rest,
           constraints,
+          definitions,
+          max_inst,
+          instantiation_count,
+          incomplete?
+        )
+
+      # non-unfolded definition
+      [hol_term(head: declaration(kind: :co, name: name), args: args, type: type_o()) | rest]
+      when is_map_key(definitions, name) ->
+        Logger.notice("unfolding definition for \"#{name}\"")
+
+        equality(_id, def_body) = Map.get(definitions, name)
+
+        unfolded_term =
+          Enum.reduce(args, def_body, fn arg, acc ->
+            mk_appl_term(acc, arg)
+          end)
+
+        tableaux(
+          [unfolded_term | rest],
+          definitions,
+          max_inst,
+          clause,
+          constraints,
+          instantiation_count,
+          incomplete?
+        )
+
+      # negated non-unfolded definition
+      [negated(hol_term(head: declaration(kind: :co, name: name), args: args)) | rest]
+      when is_map_key(definitions, name) ->
+        Logger.notice("unfolding negated definition for \"#{name}\"")
+
+        equality(_id, def_body) = Map.get(definitions, name)
+
+        unfolded_inner =
+          Enum.reduce(args, def_body, fn arg, acc ->
+            mk_appl_term(acc, arg)
+          end)
+
+        tableaux(
+          [syn_negate(unfolded_inner) | rest],
+          definitions,
+          max_inst,
+          clause,
+          constraints,
+          instantiation_count,
+          incomplete?
+        )
+
+      # atomic formula with constant as head (no logical connective)
+      [hol_term(head: declaration(kind: :co, name: name), type: type_o()) = formula | rest]
+      when name not in signature_symbols() ->
+        Logger.notice("applying \"Atom\"")
+
+        handle_atom(
+          formula,
+          :pos,
+          clause,
+          rest,
+          constraints,
+          definitions,
           max_inst,
           instantiation_count,
           incomplete?
@@ -316,6 +399,7 @@ defmodule THOU.Prover do
           clause,
           rest,
           constraints,
+          definitions,
           max_inst,
           instantiation_count,
           incomplete?
@@ -328,7 +412,16 @@ defmodule THOU.Prover do
       # double negation
       [negated(negated(a)) | rest] ->
         Logger.notice("applying \"¬¬\"")
-        tableaux([a | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
+
+        tableaux(
+          [a | rest],
+          definitions,
+          max_inst,
+          clause,
+          constraints,
+          instantiation_count,
+          incomplete?
+        )
 
       #################################################################################
       # EQUALITY
@@ -339,7 +432,16 @@ defmodule THOU.Prover do
       # reflexivity of equality -> a=a is always true
       [equality(a, a) | rest] ->
         Logger.notice("applying \"=r\"")
-        tableaux(rest, max_inst, clause, constraints, instantiation_count, incomplete?)
+
+        tableaux(
+          rest,
+          definitions,
+          max_inst,
+          clause,
+          constraints,
+          instantiation_count,
+          incomplete?
+        )
 
       # negated equality -> ¬(a=a) is always false
       [negated(equality(a, a)) | _rest] ->
@@ -369,6 +471,7 @@ defmodule THOU.Prover do
 
         tableaux(
           [subproblems | rest],
+          definitions,
           max_inst,
           clause,
           constraints,
@@ -396,6 +499,7 @@ defmodule THOU.Prover do
 
         tableaux(
           [subproblems | rest],
+          definitions,
           max_inst,
           clause,
           constraints,
@@ -427,6 +531,7 @@ defmodule THOU.Prover do
 
         tableaux(
           [subproblems | rest],
+          definitions,
           max_inst,
           clause,
           constraints,
@@ -459,6 +564,7 @@ defmodule THOU.Prover do
 
         tableaux(
           [subproblems | rest],
+          definitions,
           max_inst,
           clause,
           constraints,
@@ -472,14 +578,32 @@ defmodule THOU.Prover do
       [typed_equality(a, b, type_o()) | rest] ->
         Logger.notice("applying \"=o\"")
         equiv = equivalent_term() |> mk_appl_term(a) |> mk_appl_term(b)
-        tableaux([equiv | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
+
+        tableaux(
+          [equiv | rest],
+          definitions,
+          max_inst,
+          clause,
+          constraints,
+          instantiation_count,
+          incomplete?
+        )
 
       # negated equality (type o)
       [negated(typed_equality(a, b, type_o())) | rest] ->
         Logger.notice("applying \"¬=o\"")
         eq = equivalent_term() |> mk_appl_term(a) |> mk_appl_term(b)
         neg_eq = neg_term() |> mk_appl_term(eq)
-        tableaux([neg_eq | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
+
+        tableaux(
+          [neg_eq | rest],
+          definitions,
+          max_inst,
+          clause,
+          constraints,
+          instantiation_count,
+          incomplete?
+        )
 
       # equality (other atomic types) -> Leibnitz equality
       [typed_equality(a, b, type(goal: g, args: [])) = formula | rest] when is_atom(g) ->
@@ -494,6 +618,7 @@ defmodule THOU.Prover do
             clause,
             rest,
             constraints,
+            definitions,
             max_inst,
             instantiation_count,
             incomplete?
@@ -513,6 +638,7 @@ defmodule THOU.Prover do
 
           tableaux(
             [quant | rest],
+            definitions,
             max_inst,
             clause,
             constraints,
@@ -534,6 +660,7 @@ defmodule THOU.Prover do
             clause,
             rest,
             constraints,
+            definitions,
             max_inst,
             instantiation_count,
             incomplete?
@@ -554,6 +681,7 @@ defmodule THOU.Prover do
 
           tableaux(
             [neg_quant | rest],
+            definitions,
             max_inst,
             clause,
             constraints,
@@ -578,7 +706,15 @@ defmodule THOU.Prover do
         abstr = inner_equality |> mk_abstr_term(x)
         quant = pi |> mk_appl_term(abstr)
 
-        tableaux([quant | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
+        tableaux(
+          [quant | rest],
+          definitions,
+          max_inst,
+          clause,
+          constraints,
+          instantiation_count,
+          incomplete?
+        )
 
       # negated equality (function types) -> negated functional extensionality
       [negated(typed_equality(a, b, type)) | rest] ->
@@ -599,6 +735,7 @@ defmodule THOU.Prover do
 
         tableaux(
           [neg_quant | rest],
+          definitions,
           max_inst,
           clause,
           constraints,
@@ -613,7 +750,18 @@ defmodule THOU.Prover do
       # disjunction
       [disjunction(a, b) | rest] ->
         Logger.notice("applying \"∨\"")
-        branch(a, b, rest, clause, constraints, max_inst, instantiation_count, incomplete?)
+
+        branch(
+          a,
+          b,
+          rest,
+          clause,
+          constraints,
+          definitions,
+          max_inst,
+          instantiation_count,
+          incomplete?
+        )
 
       # negated disjunction
       [negated(disjunction(a, b)) | rest] ->
@@ -621,6 +769,7 @@ defmodule THOU.Prover do
 
         tableaux(
           [sem_negate(a), sem_negate(b) | rest],
+          definitions,
           max_inst,
           clause,
           constraints,
@@ -631,7 +780,16 @@ defmodule THOU.Prover do
       # conjunction
       [conjunction(a, b) | rest] ->
         Logger.notice("applying \"∧\"")
-        tableaux([a, b | rest], max_inst, clause, constraints, instantiation_count, incomplete?)
+
+        tableaux(
+          [a, b | rest],
+          definitions,
+          max_inst,
+          clause,
+          constraints,
+          instantiation_count,
+          incomplete?
+        )
 
       # negated conjunction
       [negated(conjunction(a, b)) | rest] ->
@@ -643,6 +801,7 @@ defmodule THOU.Prover do
           rest,
           clause,
           constraints,
+          definitions,
           max_inst,
           instantiation_count,
           incomplete?
@@ -658,6 +817,7 @@ defmodule THOU.Prover do
           rest,
           clause,
           constraints,
+          definitions,
           max_inst,
           instantiation_count,
           incomplete?
@@ -669,6 +829,7 @@ defmodule THOU.Prover do
 
         tableaux(
           [a, sem_negate(b) | rest],
+          definitions,
           max_inst,
           clause,
           constraints,
@@ -686,6 +847,7 @@ defmodule THOU.Prover do
           rest,
           clause,
           constraints,
+          definitions,
           max_inst,
           instantiation_count,
           incomplete?
@@ -701,6 +863,7 @@ defmodule THOU.Prover do
           rest,
           clause,
           constraints,
+          definitions,
           max_inst,
           instantiation_count,
           incomplete?
@@ -723,6 +886,7 @@ defmodule THOU.Prover do
 
           tableaux(
             [fresh_instance | rest] ++ [term],
+            definitions,
             max_inst,
             clause,
             constraints,
@@ -732,7 +896,7 @@ defmodule THOU.Prover do
         else
           # skip the universal quantification - upper bound of instantiations reached
           Logger.info("instantiation limit exceeded")
-          tableaux(rest, max_inst, clause, constraints, instantiation_count, true)
+          tableaux(rest, definitions, max_inst, clause, constraints, instantiation_count, true)
         end
 
       # negated universal quantification -> skolemization
@@ -749,6 +913,7 @@ defmodule THOU.Prover do
             )
             | rest
           ],
+          definitions,
           max_inst,
           clause,
           constraints,
@@ -764,6 +929,7 @@ defmodule THOU.Prover do
 
         tableaux(
           [mk_appl_term(body, mk_new_skolem_term(get_fvars(body), type)) | rest],
+          definitions,
           max_inst,
           clause,
           constraints,
@@ -784,6 +950,7 @@ defmodule THOU.Prover do
 
           tableaux(
             [fresh_instance | rest] ++ [term],
+            definitions,
             max_inst,
             clause,
             constraints,
@@ -793,7 +960,7 @@ defmodule THOU.Prover do
         else
           # skip the negated existential quantification - upper bound of instantiations reached
           Logger.info("instantiation limit exceeded")
-          tableaux(rest, max_inst, clause, constraints, instantiation_count, true)
+          tableaux(rest, definitions, max_inst, clause, constraints, instantiation_count, true)
         end
     end
   end

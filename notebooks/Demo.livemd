@@ -79,7 +79,7 @@ parse("(#{leibnitz}) <=> (#{andrews})") |> prove
 ## Cantor's Surjective Theorem
 
 ```elixir
-surj_cantor = "~ ?[F : $i > $i > $o]: ![Y : $i > $o]: ?[X : $i]: (F @ X) = Y" |> parse
+surj_cantor = "~ ?[F : $i > $i > $o]: ![Y : $i > $o]: ?[X : $i]: ((F @ X) = Y)" |> parse
 prove surj_cantor
 ```
 

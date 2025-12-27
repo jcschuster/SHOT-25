@@ -17,25 +17,29 @@ defmodule THOU.Runner do
   end
 
   def run_prover(problem) do
-    axiom_terms = Enum.map(problem.axioms, fn {_name, term} -> term end)
-    definition_terms = Enum.map(problem.definitions, fn {_name, term} -> term end)
+    definitions = Map.new(problem.definitions)
 
-    assumptions = axiom_terms ++ definition_terms
+    assumptions = Enum.map(problem.axioms, fn {_name, term} -> term end)
 
     case problem.conjecture do
       {name, conjecture_term} ->
         IO.puts("--------------------------------------------------")
         IO.puts("Proving Conjecture: #{name}")
-        IO.puts("Loaded #{length(assumptions)} axioms/definitions.")
+
+        IO.puts(
+          "Loaded #{length(assumptions)} axioms" <>
+            " and #{length(Map.keys(definitions))} definitions."
+        )
+
         IO.puts("--------------------------------------------------")
 
-        result = Prover.prove(conjecture_term, assumptions)
+        result = Prover.prove(conjecture_term, assumptions, definitions)
         print_result(result)
 
       nil ->
         # Fallback: If there is no conjecture, check if the axioms are satisfiable
         IO.puts("No conjecture found. Checking consistency (SAT) of axioms...")
-        result = Prover.sat(assumptions)
+        result = Prover.sat(assumptions, definitions)
 
         case result do
           :unsat -> IO.puts("Result: Unsatisfiable (Axioms contain a contradiction)")
@@ -46,8 +50,10 @@ defmodule THOU.Runner do
 
   defp print_result(:valid), do: IO.puts("STATUS: Theorem (Proof Found)")
 
-  defp print_result({:countersat, _}),
-    do: IO.puts("STATUS: CounterSatisfiable (Counter-model found)")
+  defp print_result({:countersat, countermodel}) do
+    IO.puts("STATUS: CounterSatisfiable (Counter-model found)")
+    IO.puts(countermodel)
+  end
 
   defp print_result({:unknown, _}), do: IO.puts("STATUS: Unknown (Timeout or incomplete)")
 end
