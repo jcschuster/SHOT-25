@@ -20,58 +20,56 @@ import THOU.Util
 import THOU.HOL.Definitions
 import THOU.HOL.Patterns
 import THOU.Prover
-import THOU.TermOrder.TypeOrder
 import THOU.Parser.Parser
 alias THOU.Parser.Parser.Context
 alias THOU.Parser.TPTP
 alias THOU.Runner
+import THOU.Preprocessing.Serialization
+alias THOU.Preprocessing.Tokenizer
+import THOU.Preprocessing.Rewriting
 
 Logger.configure(level: :info)
 Logger.put_application_level(:hol, :error)
 ```
 
 ```elixir
-parse "(~) @ ? [P : $i] : X"
-```
+Logger.configure(level: :error)
 
-```elixir
-# Logger.configure(level: :error)
-
-# Path.wildcard("C:/Users/johan/Downloads/mirabelle-THF-output-3/mirabelle-output/TH0*/**/*.p")
-# |> Task.async_stream(fn path ->
-#     IO.puts("proving file #{path}")
-#     output = ExUnit.CaptureIO.capture_io(fn ->
-#       Runner.prove_file(path, false)
-#     end)
-#     output
-#   end,
-#   timeout: 10_000,
-#   on_timeout: :kill_task
-# )
-# |> Enum.reduce(%{completed: 0, timeout: 0, error: 0, results: %{}, reasons: []}, fn result, acc ->
-#   case result do
-#     {:ok, output} ->
-#       prover_res = cond do
-#         output =~ "CounterSatisfiable" -> "CounterSatisfiable"
-#         output =~ "Theorem" -> "Theorem"
-#         true -> "Unknown"
-#       end
-#       new_results = Map.put(acc.results, prover_res, Map.get(acc.results, prover_res, 0) + 1)
-#       %{acc | completed: acc[:completed] + 1, results: new_results}
-#     {:exit, :timeout} ->
-#       IO.puts("timeout")
-#       %{acc | timeout: acc[:timeout] + 1}
-#     {:exit, reason} ->
-#       IO.puts("crashed: #{inspect reason}")
-#       %{acc | error: acc[:error] + 1, reasons: acc[:reasons] ++ [reason]}
-#   end
-# end)
+Path.wildcard("C:/Users/johan/Downloads/mirabelle-THF-output-3/mirabelle-output/TH0*/**/*.p")
+|> Task.async_stream(fn path ->
+    IO.puts("proving file #{path}")
+    output = ExUnit.CaptureIO.capture_io(fn ->
+      Runner.prove_file(path, false)
+    end)
+    output
+  end,
+  timeout: 10_000,
+  on_timeout: :kill_task
+)
+|> Enum.reduce(%{completed: 0, timeout: 0, error: 0, results: %{}, reasons: []}, fn result, acc ->
+  case result do
+    {:ok, output} ->
+      prover_res = cond do
+        output =~ "CounterSatisfiable" -> "CounterSatisfiable"
+        output =~ "Theorem" -> "Theorem"
+        true -> "Unknown"
+      end
+      new_results = Map.put(acc.results, prover_res, Map.get(acc.results, prover_res, 0) + 1)
+      %{acc | completed: acc[:completed] + 1, results: new_results}
+    {:exit, :timeout} ->
+      IO.puts("timeout")
+      %{acc | timeout: acc[:timeout] + 1}
+    {:exit, reason} ->
+      IO.puts("crashed: #{inspect reason}")
+      %{acc | error: acc[:error] + 1, reasons: acc[:reasons] ++ [reason]}
+  end
+end)
 
 # %{
-#   timeout: 361,
+#   timeout: 379,
 #   error: 0,
-#   completed: 599,
-#   results: %{"CounterSatisfiable" => 60, "Theorem" => 76, "Unknown" => 463},
+#   completed: 581,
+#   results: %{"CounterSatisfiable" => 60, "Theorem" => 90, "Unknown" => 431},
 #   reasons: []
 # }
 ```

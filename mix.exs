@@ -22,7 +22,8 @@ defmodule THOU.MixProject do
   defp deps do
     [
       {:hol, "1.0.2"},
-      {:nimble_parsec, "~> 1.4.2"}
+      {:nimble_parsec, "~> 1.4.2"},
+      {:rustler, "~> 0.37.1", runtime: false}
     ]
   end
 end
