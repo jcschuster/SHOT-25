@@ -25,14 +25,22 @@ fn try_rewrite(name: &str, lhs: &str, rhs: &str) -> Result<Rewrite<HOL, ()>, Str
 
 fn make_rules() -> Result<Vec<Rewrite<HOL, ()>>, String> {
     let raw_rules = vec![
-        ("comm-and",   "(∧∷o⇾o⇾o ?a ?b)", "(∧∷o⇾o⇾o ?b ?a)"),
-        ("comm-or",    "(∨∷o⇾o⇾o ?a ?b)", "(∨∷o⇾o⇾o ?b ?a)"),
-        ("comm-equiv", "(≡∷o⇾o⇾o ?a ?b)", "(≡∷o⇾o⇾o ?b ?a)"),
-        ("comm-eq",    "(= ?a ?b)",        "(= ?b ?a)"),
+        ("absorb-and", "(∧∷o⇾o⇾o ?a (∨∷o⇾o⇾o ?a ?b))", "?a"),
+        ("absorb-or",  "(∨∷o⇾o⇾o ?a (∨∷o⇾o⇾o ?a ?b))", "?a"),
         ("assoc-and",  "(∧∷o⇾o⇾o ?a (∧∷o⇾o⇾o ?b ?c))", "(∧∷o⇾o⇾o (∧∷o⇾o⇾o ?a ?b) ?c)"),
         ("assoc-or",   "(∨∷o⇾o⇾o ?a (∨∷o⇾o⇾o ?b ?c))", "(∨∷o⇾o⇾o (∨∷o⇾o⇾o ?a ?b) ?c)"),
+        ("comm-and",   "(∧∷o⇾o⇾o ?a ?b)",               "(∧∷o⇾o⇾o ?b ?a)"),
+        ("comm-eq",    "(= ?a ?b)",                      "(= ?b ?a)"),
+        ("comm-equiv", "(≡∷o⇾o⇾o ?a ?b)",               "(≡∷o⇾o⇾o ?b ?a)"),
+        ("comm-or",    "(∨∷o⇾o⇾o ?a ?b)",               "(∨∷o⇾o⇾o ?b ?a)"),
+        ("demorg-and", "(¬∷o⇾o (∧∷o⇾o⇾o ?a ?b))",       "(∨∷o⇾o⇾o (¬∷o⇾o ?a) (¬∷o⇾o ?b))"),
+        ("demorg-or",  "(¬∷o⇾o (∨∷o⇾o⇾o ?a ?b))",       "(∧∷o⇾o⇾o (¬∷o⇾o ?a) (¬∷o⇾o ?b))"),
         ("dist-and",   "(∧∷o⇾o⇾o ?a (∨∷o⇾o⇾o ?b ?c))", "(∨∷o⇾o⇾o (∧∷o⇾o⇾o ?a ?b) (∧∷o⇾o⇾o ?a ?c))"),
         ("dist-or",    "(∨∷o⇾o⇾o ?a (∧∷o⇾o⇾o ?b ?c))", "(∧∷o⇾o⇾o (∨∷o⇾o⇾o ?a ?b) (∨∷o⇾o⇾o ?a ?c))"),
+        ("elim-dneg",  "(¬∷o⇾o (¬∷o⇾o ?a))",            "?a"),
+        ("elim-imp",   "(⊃∷o⇾o⇾o ?a ?b)",               "(∨∷o⇾o⇾o ?a (¬∷o⇾o ?b))"),
+        ("idem-and",   "(∧∷o⇾o⇾o ?a ?a)",               "?a"),
+        ("idem-or",    "(∨∷o⇾o⇾o ?a ?a)",               "?a"),
     ];
 
     let mut rules = Vec::new();

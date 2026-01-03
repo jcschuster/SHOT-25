@@ -35,7 +35,8 @@ Logger.put_application_level(:hol, :error)
 ```elixir
 Logger.configure(level: :error)
 
-Path.wildcard("C:/Users/johan/Downloads/mirabelle-THF-output-3/mirabelle-output/TH0*/**/*.p")
+Path.wildcard("C:/Users/johan/Downloads/mirabelle-THF-output-3/mirabelle-output/" <>
+  "TH0_with_simp/PMLinHOL_shallow_minimal_further_tests_2/**/*.p")
 |> Task.async_stream(fn path ->
     IO.puts("proving file #{path}")
     output = ExUnit.CaptureIO.capture_io(fn ->
@@ -43,7 +44,7 @@ Path.wildcard("C:/Users/johan/Downloads/mirabelle-THF-output-3/mirabelle-output/
     end)
     output
   end,
-  timeout: 10_000,
+  timeout: 30_000,
   on_timeout: :kill_task
 )
 |> Enum.reduce(%{completed: 0, timeout: 0, error: 0, results: %{}, reasons: []}, fn result, acc ->
