@@ -32,6 +32,8 @@ Logger.configure(level: :info)
 Logger.put_application_level(:hol, :error)
 ```
 
+## Custom Files
+
 ```elixir
 Logger.configure(level: :error)
 

@@ -8,7 +8,7 @@ Mix.install([
 ])
 ```
 
-## Section
+## Setup
 
 ```elixir
 import HOL.Data
@@ -190,7 +190,8 @@ run_prover(problem)
   )
 ).")
 
-run_prover(problem)
+#run_prover(problem)
+# Status: Theorem after a long time
 ```
 
 Example 7a)
@@ -384,10 +385,6 @@ run_prover(problem)
 ```
 
 ```elixir
-IO.puts extens_eq("($i>$i)", "$i")
-```
-
-```elixir
 {:ok, problem} = parse_string(extens_eq("$i", "$i") <> extens_eq("$i", "($i>$i)") <>
 "thf(extens_nontrivial_extensional,conjecture,
 ![F : $i>$i>$i, G : $i>$i>$i]:
@@ -445,7 +442,9 @@ run_prover(problem)
 ctx = Context.new() |> Context.put_const("f", mk_type(:i, [mk_type(:i)]))
 
 "(![X : $i]: ((f @ X) = X)) & (p @ (^[X : $i] : X)) => (p @ (^[X : $i]: f @ X))"
-  |> parse(ctx) |> prove
+  |> parse(ctx)
+#  |> prove
+# -> timeout
 ```
 
 Example 14
@@ -457,7 +456,8 @@ thf(conj,conjecture,
 ((![X : $i]: (leibnitz_eq_i @ (f @ X) @ X)) & (p @ ^[X : $i] : X)) => p @ f
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# -> timeout
 ```
 
 ```elixir
@@ -474,7 +474,9 @@ run_prover(problem)
 ctx = Context.new() |> Context.put_const("f", mk_type(:i, [mk_type(:i)]))
 
 "(![X : $i]: ((f @ X) = X)) & (p @ (^[X : $i] : X)) => (p @ f)"
-  |> parse(ctx) |> prove
+  |> parse(ctx)
+#  |> prove
+# -> timeout
 ```
 
 Example 15

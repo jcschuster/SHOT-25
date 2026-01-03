@@ -3,7 +3,7 @@ defmodule THOU.Parser.Parser do
   import HOL.Terms
   import THOU.HOL.Definitions
   import THOU.Util
-  import THOU.Parser.Tokenizer
+  alias THOU.Parser.TPTPTokenizer, as: Tokenizer
   alias THOU.Parser.TypeInference
 
   # Context struct to track variable types and declared constants
@@ -32,7 +32,7 @@ defmodule THOU.Parser.Parser do
   # --- Entry Point ---
 
   def parse(formula_str, context \\ Context.new()) do
-    {:ok, tokens, "", _, _, _} = tokenize(formula_str)
+    {:ok, tokens, "", _, _, _} = Tokenizer.tokenize(formula_str)
     parse_tokens(tokens, context)
   end
 

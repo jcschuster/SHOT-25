@@ -1,7 +1,8 @@
 defmodule THOU.Parser.TPTP do
   import HOL.Data
   import THOU.HOL.{Definitions, Patterns}
-  alias THOU.Parser.{Tokenizer, Parser}
+  alias THOU.Parser.TPTPTokenizer, as: Tokenizer
+  alias THOU.Parser.Parser
   alias THOU.Parser.Parser.Context
 
   defmodule Problem do

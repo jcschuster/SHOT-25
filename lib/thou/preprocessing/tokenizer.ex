@@ -1,4 +1,4 @@
-defmodule THOU.Preprocessing.Tokenizer do
+defmodule THOU.Preprocessing.SExprTokenizer do
   import NimbleParsec
 
   whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 1) |> ignore()
