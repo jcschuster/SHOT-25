@@ -27,9 +27,19 @@ alias THOU.Runner
 import THOU.Preprocessing.Serialization
 alias THOU.Preprocessing.Tokenizer
 import THOU.Preprocessing.Rewriting
+alias THOU.Heuristics.NCPO
 
 Logger.configure(level: :info)
 Logger.put_application_level(:hol, :error)
+```
+
+```elixir
+parse "X"
+```
+
+```elixir
+s = parse "a | b"
+t = parse "c => d"
 ```
 
 ## Custom Files

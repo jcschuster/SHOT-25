@@ -6,6 +6,7 @@ defmodule THOU.Prover do
   import THOU.HOL.Definitions
   import THOU.HOL.Patterns
   alias THOU.Preprocessing.Rewriting
+  alias THOU.Heuristics.NCPO
   require Logger
 
   @empty_clause MapSet.new()
@@ -101,7 +102,6 @@ defmodule THOU.Prover do
     end
   end
 
-  # Which branch to check first? -> Introduce Term Orderings and Heuristics
   defp branch(
          a,
          b,
@@ -113,8 +113,15 @@ defmodule THOU.Prover do
          instantiation_count,
          incomplete?
        ) do
-    left_side = List.flatten([a])
-    right_side = List.flatten([b])
+    a_terms = List.flatten([a])
+    b_terms = List.flatten([b])
+
+    {left_side, right_side} =
+      if NCPO.smaller_multiset?(a_terms, b_terms) do
+        {a_terms, b_terms}
+      else
+        {b_terms, a_terms}
+      end
 
     case tableaux(
            left_side ++ rest,

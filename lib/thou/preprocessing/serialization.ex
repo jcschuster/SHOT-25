@@ -39,6 +39,7 @@ defmodule THOU.Preprocessing.Serialization do
   end
 
   defp encode_var_name(n) when is_binary(n), do: n
+  defp encode_var_name(n) when is_integer(n), do: Integer.to_string(n)
   defp encode_var_name(n), do: "HEX:" <> Base.encode16(:erlang.term_to_binary(n))
 
   defp type_to_s_expr(type(goal: g, args: [])), do: Atom.to_string(g)
@@ -75,8 +76,9 @@ defmodule THOU.Preprocessing.Serialization do
   defp tokens_to_term([{:var, id}, {:dcolon, _} | rest]) do
     "$VAR~" <> raw_name = id
     var_name = decode_var_name(raw_name)
-    {type, rest2} = tokens_to_type(rest)
-    {mk_free_var_term(var_name, type), rest2}
+    {var_type, rest2} = tokens_to_type(rest)
+    var = declaration(kind: :fv, name: var_name, type: var_type)
+    {mk_term(var), rest2}
   end
 
   defp tokens_to_term([{:const, "="} | rest]) do
@@ -102,7 +104,7 @@ defmodule THOU.Preprocessing.Serialization do
     "$VAR~" <> raw_name = id
     var_name = decode_var_name(raw_name)
     {var_type, rest2} = tokens_to_type(rest)
-    var = mk_free_var(var_name, var_type)
+    var = declaration(kind: :fv, name: var_name, type: var_type)
     {body, [{:rparen, _} | rest3]} = tokens_to_term(rest2)
     {mk_abstr_term(body, var), rest3}
   end
