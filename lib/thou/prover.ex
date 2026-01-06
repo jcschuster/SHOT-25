@@ -8,17 +8,37 @@ defmodule THOU.Prover do
   alias THOU.Preprocessing.Rewriting
   alias THOU.Heuristics.NCPO
   require Logger
+  require Record
 
-  @empty_clause MapSet.new()
+  Record.defrecord(:unif_checkpoint, substs: nil, constrs: nil)
 
-  # Bounds for ensuring termination and complexity control
-  @max_instantiations 4
-  @unification_depth 8
+  @type unif_checkpoint() ::
+          {:unif_checkpoint, [HOL.Data.substitution()],
+           [{HOL.Data.hol_term(), HOL.Data.hol_term()}]}
+
+  @type tableaux_res() ::
+          {:closed, [unif_checkpoint()]}
+          | {:open, MapSet.t(), [HOL.Data.hol_term()]}
+          | {:incomplete, MapSet.t(), [HOL.Data.hol_term()]}
+
+  defmodule Parameters do
+    defstruct canonicalize: true,
+              branch_heuristic: :ncpo,
+              max_instantiations: 4,
+              unification_depth: 8
+  end
+
+  defmodule State do
+    defstruct clause: MapSet.new(),
+              constraints: [],
+              incomplete?: false,
+              inst_count: %{}
+  end
 
   def sat(formulas, definitions \\ %{})
 
   def sat(formulas, definitions) when is_list(formulas) do
-    tableaux(formulas, definitions, @max_instantiations)
+    tableaux(formulas, definitions, %State{}, %Parameters{})
     |> as_assignment()
   end
 
@@ -34,13 +54,13 @@ defmodule THOU.Prover do
     end
   end
 
-  def unify_with_literals(formula, literals, constraints) do
+  def unify_with_literals(formula, literals, constraints, parameters) do
     Enum.reduce(literals, [], fn lit, solutions ->
       ("Trying to unify #{PrettyPrint.pp_term(formula)} with literal #{PrettyPrint.pp_term(lit)}" <>
          " under constraints #{pp_constraints(constraints)}")
       |> Logger.notice()
 
-      result = unify([{formula, lit} | constraints], true, @unification_depth)
+      result = unify([{formula, lit} | constraints], true, parameters.unification_depth)
 
       PrettyPrint.pp_res(result) |> Logger.notice()
 
@@ -55,21 +75,20 @@ defmodule THOU.Prover do
     end)
   end
 
-  defp handle_atom(
-         formula,
-         polarity,
-         clause,
-         rest,
-         constraints,
-         definitions,
-         max_inst,
-         instantiation_count,
-         incomplete?
-       ) do
+  @spec handle_atom(
+          HOL.Data.hol_term(),
+          :pos | :neg,
+          [HOL.Data.hol_term()],
+          Map,
+          State,
+          Parameters
+        ) ::
+          tableaux_res()
+  defp handle_atom(formula, polarity, rest, definitions, state, parameters) do
     unif_set =
       case polarity do
-        :pos -> sem_negate(clause)
-        :neg -> clause
+        :pos -> sem_negate(state.clause)
+        :neg -> state.clause
       end
 
     stripped_formula =
@@ -79,9 +98,17 @@ defmodule THOU.Prover do
       end
 
     unif_checkpoints =
-      case unify_with_literals(stripped_formula, unif_set, constraints) do
-        [] -> unify_with_literals(sem_negate(formula), syn_negate(unif_set), constraints)
-        sol -> sol
+      case unify_with_literals(stripped_formula, unif_set, state.constraints, parameters) do
+        [] ->
+          unify_with_literals(
+            sem_negate(formula),
+            syn_negate(unif_set),
+            state.constraints,
+            parameters
+          )
+
+        sol ->
+          sol
       end
 
     case unif_checkpoints do
@@ -90,11 +117,8 @@ defmodule THOU.Prover do
         tableaux(
           rest,
           definitions,
-          max_inst,
-          MapSet.put(clause, formula),
-          constraints,
-          instantiation_count,
-          incomplete?
+          %State{state | clause: MapSet.put(state.clause, formula)},
+          parameters
         )
 
       candidates ->
@@ -102,36 +126,33 @@ defmodule THOU.Prover do
     end
   end
 
-  defp branch(
-         a,
-         b,
-         rest,
-         clause,
-         constraints,
-         definitions,
-         max_inst,
-         instantiation_count,
-         incomplete?
-       ) do
+  @spec branch(
+          HOL.Data.hol_term(),
+          HOL.Data.hol_term(),
+          [HOL.Data.hol_term()],
+          Map,
+          State,
+          Parameters
+        ) ::
+          tableaux_res()
+  defp branch(a, b, rest, definitions, state, parameters) do
     a_terms = List.flatten([a])
     b_terms = List.flatten([b])
 
     {left_side, right_side} =
-      if NCPO.smaller_multiset?(a_terms, b_terms) do
-        {a_terms, b_terms}
-      else
-        {b_terms, a_terms}
+      case parameters.branch_heuristic do
+        :ncpo ->
+          if NCPO.smaller_multiset?(a_terms, b_terms) do
+            {a_terms, b_terms}
+          else
+            {b_terms, a_terms}
+          end
+
+        _ ->
+          {a_terms, b_terms}
       end
 
-    case tableaux(
-           left_side ++ rest,
-           definitions,
-           max_inst,
-           clause,
-           constraints,
-           instantiation_count,
-           incomplete?
-         ) do
+    case tableaux(left_side ++ rest, definitions, state, parameters) do
       {:incomplete, clause, constr} ->
         {:incomplete, clause, constr}
 
@@ -143,39 +164,30 @@ defmodule THOU.Prover do
         case unif_checkpoints do
           [] ->
             # closed without substitutions or constraints
-            tableaux(
-              right_side ++ rest,
-              definitions,
-              max_inst,
-              clause,
-              constraints,
-              instantiation_count,
-              incomplete?
-            )
+            tableaux(right_side ++ rest, definitions, state, parameters)
 
           _ ->
             # Try checkpoints on right branch and propagate up
             {new_checkpoints, last_open} =
-              Enum.reduce_while(unif_checkpoints, {[], nil}, fn {:unif_checkpoint, substitutions,
-                                                                 remaining},
+              Enum.reduce_while(unif_checkpoints, {[], nil}, fn unif_checkpoint(
+                                                                  substs: substitutions,
+                                                                  constrs: remaining
+                                                                ),
                                                                 {checkpoints, prev_open} ->
                 new_rest = apply_subst(substitutions, rest)
-                new_clause = apply_subst(substitutions, clause)
+                new_clause = apply_subst(substitutions, state.clause)
                 new_right_side = apply_subst(substitutions, right_side)
 
                 case tableaux(
                        new_right_side ++ new_rest,
                        definitions,
-                       max_inst,
-                       new_clause,
-                       remaining,
-                       instantiation_count,
-                       incomplete?
+                       %State{state | clause: new_clause, constraints: remaining},
+                       parameters
                      ) do
                   {:closed, new_cpts} ->
                     added_cpts =
                       if new_cpts == [] do
-                        [{:unif_checkpoint, substitutions, remaining}]
+                        [unif_checkpoint(substs: substitutions, constrs: remaining)]
                       else
                         Enum.map(
                           new_cpts,
@@ -214,734 +226,438 @@ defmodule THOU.Prover do
     end
   end
 
-  defp tableaux(
-         formulas,
-         definitions,
-         max_inst,
-         clause \\ @empty_clause,
-         constraints \\ [],
-         # Track instantiations of quantifiers
-         instantiation_count \\ %{},
-         incomplete? \\ false
-       ) do
-    if formulas == [] do
-      if incomplete? do
-        # empty formulas and incomplete flag -> rules exhausted while max_inst met
-        Logger.notice("OPEN: no formulas remain, exceeded maximum instantiation limit")
-        {:incomplete, clause, constraints}
-      else
-        Logger.notice("OPEN: no formulas remain")
-        {:open, clause, constraints}
-      end
+  @spec tableaux([HOL.Data.hol_term()], Map, State, Parameters) :: tableaux_res()
+  defp tableaux([], _, %State{} = state, _) do
+    if state.incomplete? do
+      # empty formulas and incomplete flag -> rules exhausted while max_inst met
+      Logger.notice("OPEN: no formulas remain, exceeded maximum instantiation limit")
+      {:incomplete, state.clause, state.constraints}
     else
-      [current_formula | rest] = formulas
-      formula = Rewriting.canonicalize(current_formula)
-      "Processing formula #{PrettyPrint.pp_term(current_formula)}" |> Logger.notice()
-      "Canonicalized: #{PrettyPrint.pp_term(formula)}" |> Logger.notice()
-      rest_pp = Enum.map(rest, &PrettyPrint.pp_term/1) |> inspect()
-      ("Rest: " <> rest_pp) |> Logger.info()
-      clause_pp = Enum.map(clause, &PrettyPrint.pp_term/1) |> inspect()
-      ("Clause: " <> clause_pp) |> Logger.info()
+      Logger.notice("OPEN: no formulas remain")
+      {:open, state.clause, state.constraints}
+    end
+  end
 
-      case formula do
-        #################################################################################
-        # BOOLEAN CONSTANTS
-        #################################################################################
+  defp tableaux(
+         [current_formula | rest],
+         definitions,
+         %State{} = state,
+         %Parameters{} = parameters
+       ) do
+    "Processing formula #{PrettyPrint.pp_term(current_formula)}" |> Logger.notice()
 
-        true_term() ->
-          Logger.notice("applying \"⊤\"")
+    formula =
+      if parameters.canonicalize do
+        f = Rewriting.canonicalize(current_formula)
+        "Canonicalized: #{PrettyPrint.pp_term(f)}" |> Logger.notice()
+        f
+      else
+        current_formula
+      end
 
-          tableaux(
-            rest,
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
+    rest_pp = Enum.map(rest, &PrettyPrint.pp_term/1) |> inspect()
+    ("Rest: " <> rest_pp) |> Logger.info()
+    clause_pp = Enum.map(state.clause, &PrettyPrint.pp_term/1) |> inspect()
+    ("Clause: " <> clause_pp) |> Logger.info()
 
-        negated(true_term()) ->
-          Logger.notice("applying \"¬⊤\" (closing branch)")
-          {:closed, []}
+    case formula do
+      #################################################################################
+      # BOOLEAN CONSTANTS
+      #################################################################################
 
-        false_term() ->
-          Logger.notice("applying \"⊥\" (closing branch)")
-          {:closed, []}
+      true_term() ->
+        Logger.notice("applying \"⊤\"")
+        tableaux(rest, definitions, state, parameters)
 
-        negated(false_term()) ->
-          Logger.notice("applying \"⊤\"")
+      negated(true_term()) ->
+        Logger.notice("applying \"¬⊤\" (closing branch)")
+        {:closed, []}
 
-          tableaux(
-            rest,
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
+      false_term() ->
+        Logger.notice("applying \"⊥\" (closing branch)")
+        {:closed, []}
 
-        #################################################################################
-        # ATOMS
-        #################################################################################
+      negated(false_term()) ->
+        Logger.notice("applying \"¬⊥\"")
+        tableaux(rest, definitions, state, parameters)
 
-        # atomic formula with free variable head
-        hol_term(head: declaration(kind: :fv), type: type_o()) ->
-          Logger.notice("applying \"Atom\"")
+      #################################################################################
+      # ATOMS
+      #################################################################################
 
-          handle_atom(
-            formula,
-            :pos,
-            clause,
-            rest,
-            constraints,
-            definitions,
-            max_inst,
-            instantiation_count,
-            incomplete?
-          )
+      # atomic formula with free variable head
+      hol_term(head: declaration(kind: :fv), type: type_o()) ->
+        Logger.notice("applying \"Atom\"")
+        handle_atom(formula, :pos, rest, definitions, state, parameters)
 
-        # negated atomic formula with free variable head
-        negated(hol_term(head: declaration(kind: :fv))) ->
-          Logger.notice("applying \"Atom\"")
+      # negated atomic formula with free variable head
+      negated(hol_term(head: declaration(kind: :fv))) ->
+        Logger.notice("applying \"Atom\"")
+        handle_atom(formula, :neg, rest, definitions, state, parameters)
 
-          handle_atom(
-            formula,
-            :neg,
-            clause,
-            rest,
-            constraints,
-            definitions,
-            max_inst,
-            instantiation_count,
-            incomplete?
-          )
+      # non-unfolded definition
+      hol_term(head: declaration(kind: :co, name: name), args: args, type: type_o())
+      when is_map_key(definitions, name) ->
+        Logger.notice("unfolding definition for \"#{name}\"")
 
-        # non-unfolded definition
-        hol_term(head: declaration(kind: :co, name: name), args: args, type: type_o())
-        when is_map_key(definitions, name) ->
-          Logger.notice("unfolding definition for \"#{name}\"")
+        equality(_id, def_body) = Map.get(definitions, name)
 
-          equality(_id, def_body) = Map.get(definitions, name)
+        unfolded_term =
+          Enum.reduce(args, def_body, fn arg, acc ->
+            mk_appl_term(acc, arg)
+          end)
 
-          unfolded_term =
-            Enum.reduce(args, def_body, fn arg, acc ->
-              mk_appl_term(acc, arg)
-            end)
+        tableaux([unfolded_term | rest], definitions, state, parameters)
 
-          tableaux(
-            [unfolded_term | rest],
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
+      # negated non-unfolded definition
+      negated(hol_term(head: declaration(kind: :co, name: name), args: args))
+      when is_map_key(definitions, name) ->
+        Logger.notice("unfolding negated definition for \"#{name}\"")
 
-        # negated non-unfolded definition
-        negated(hol_term(head: declaration(kind: :co, name: name), args: args))
-        when is_map_key(definitions, name) ->
-          Logger.notice("unfolding negated definition for \"#{name}\"")
+        equality(_id, def_body) = Map.get(definitions, name)
 
-          equality(_id, def_body) = Map.get(definitions, name)
+        unfolded_inner =
+          Enum.reduce(args, def_body, fn arg, acc ->
+            mk_appl_term(acc, arg)
+          end)
 
-          unfolded_inner =
-            Enum.reduce(args, def_body, fn arg, acc ->
-              mk_appl_term(acc, arg)
-            end)
+        tableaux([syn_negate(unfolded_inner) | rest], definitions, state, parameters)
 
-          tableaux(
-            [syn_negate(unfolded_inner) | rest],
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
+      # atomic formula with constant as head (no logical connective)
+      hol_term(head: declaration(kind: :co, name: name), type: type_o())
+      when name not in signature_symbols() ->
+        Logger.notice("applying \"Atom\"")
+        handle_atom(formula, :pos, rest, definitions, state, parameters)
 
-        # atomic formula with constant as head (no logical connective)
-        hol_term(head: declaration(kind: :co, name: name), type: type_o())
-        when name not in signature_symbols() ->
-          Logger.notice("applying \"Atom\"")
+      # negated atomic formula with constant as head (no logical connective)
+      negated(hol_term(head: declaration(kind: :co, name: name)))
+      when name not in signature_symbols() ->
+        Logger.notice("applying \"Atom\"")
+        handle_atom(formula, :neg, rest, definitions, state, parameters)
 
-          handle_atom(
-            formula,
-            :pos,
-            clause,
-            rest,
-            constraints,
-            definitions,
-            max_inst,
-            instantiation_count,
-            incomplete?
-          )
+      #################################################################################
+      # DOUBLE NEGATION
+      #################################################################################
 
-        # negated atomic formula with constant as head (no logical connective)
-        negated(hol_term(head: declaration(kind: :co, name: name)))
-        when name not in signature_symbols() ->
-          Logger.notice("applying \"Atom\"")
+      # double negation
+      negated(negated(a)) ->
+        Logger.notice("applying \"¬¬\"")
+        tableaux([a | rest], definitions, state, parameters)
 
-          handle_atom(
-            formula,
-            :neg,
-            clause,
-            rest,
-            constraints,
-            definitions,
-            max_inst,
-            instantiation_count,
-            incomplete?
-          )
+      #################################################################################
+      # EQUALITY
+      #################################################################################
 
-        #################################################################################
-        # DOUBLE NEGATION
-        #################################################################################
+      ################################## REFLEXIVITY ##################################
 
-        # double negation
-        negated(negated(a)) ->
-          Logger.notice("applying \"¬¬\"")
+      # reflexivity of equality -> a=a is always true
+      equality(a, a) ->
+        Logger.notice("applying \"=r\"")
+        tableaux(rest, definitions, state, parameters)
 
-          tableaux(
-            [a | rest],
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
+      # negated equality -> ¬(a=a) is always false
+      negated(equality(a, a)) ->
+        Logger.notice("applying \"¬=r\"")
+        {:closed, []}
 
-        #################################################################################
-        # EQUALITY
-        #################################################################################
+      ################################# EXTENSIONALITY ################################
 
-        ################################## REFLEXIVITY ##################################
+      equality(
+        hol_term(bvars: [], head: declaration(name: n) = h, args: args1, type: t),
+        hol_term(bvars: [], head: h, args: args2, type: t)
+      )
+      when n not in signature_symbols() ->
+        Logger.notice("applying \"=ext\"")
 
-        # reflexivity of equality -> a=a is always true
-        equality(a, a) ->
-          Logger.notice("applying \"=r\"")
+        subproblems =
+          Enum.zip(args1, args2)
+          |> Enum.map(fn {t1, t2} ->
+            get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
+          end)
+          |> Enum.reduce(true_term(), fn t, acc ->
+            and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
+          end)
 
-          tableaux(
-            rest,
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
+        tableaux([subproblems | rest], definitions, state, parameters)
 
-        # negated equality -> ¬(a=a) is always false
-        negated(equality(a, a)) ->
-          Logger.notice("applying \"¬=r\"")
-          {:closed, []}
+      equality(
+        hol_term(bvars: [], head: hol_term() = h, args: args1, type: t),
+        hol_term(bvars: [], head: h, args: args2, type: t)
+      ) ->
+        Logger.notice("applying \"=ext\"")
 
-        ################################# EXTENSIONALITY ################################
+        subproblems =
+          Enum.zip(args1, args2)
+          |> Enum.map(fn {t1, t2} ->
+            get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
+          end)
+          |> Enum.reduce(true_term(), fn t, acc ->
+            and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
+          end)
 
+        tableaux([subproblems | rest], definitions, state, parameters)
+
+      negated(
+        equality(
+          hol_term(bvars: [], head: hol_term() = h, args: args1, type: t),
+          hol_term(bvars: [], head: h, args: args2, type: t)
+        )
+      ) ->
+        Logger.notice("applying \"¬=ext\"")
+
+        inner_subproblems =
+          Enum.zip(args1, args2)
+          |> Enum.map(fn {t1, t2} ->
+            get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
+          end)
+          |> Enum.reduce(true_term(), fn t, acc ->
+            and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
+          end)
+
+        subproblems = mk_appl_term(neg_term(), inner_subproblems)
+
+        tableaux([subproblems | rest], definitions, state, parameters)
+
+      negated(
         equality(
           hol_term(bvars: [], head: declaration(name: n) = h, args: args1, type: t),
           hol_term(bvars: [], head: h, args: args2, type: t)
         )
-        when n not in signature_symbols() ->
-          Logger.notice("applying \"=ext\"")
+      )
+      when n not in signature_symbols() ->
+        Logger.notice("applying \"¬=ext\"")
 
-          subproblems =
-            Enum.zip(args1, args2)
-            |> Enum.map(fn {t1, t2} ->
-              get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
-            end)
-            |> Enum.reduce(true_term(), fn t, acc ->
-              and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
-            end)
+        inner_subproblems =
+          Enum.zip(args1, args2)
+          |> Enum.map(fn {t1, t2} ->
+            get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
+          end)
+          |> Enum.reduce(true_term(), fn t, acc ->
+            and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
+          end)
 
-          tableaux(
-            [subproblems | rest],
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
+        subproblems = mk_appl_term(neg_term(), inner_subproblems)
 
-        equality(
-          hol_term(bvars: [], head: hol_term() = h, args: args1, type: t),
-          hol_term(bvars: [], head: h, args: args2, type: t)
-        ) ->
-          Logger.notice("applying \"=ext\"")
+        tableaux([subproblems | rest], definitions, state, parameters)
 
-          subproblems =
-            Enum.zip(args1, args2)
-            |> Enum.map(fn {t1, t2} ->
-              get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
-            end)
-            |> Enum.reduce(true_term(), fn t, acc ->
-              and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
-            end)
+      ############################# TYPED EQUALITY SYMBOLS ############################
 
-          tableaux(
-            [subproblems | rest],
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
+      # equality (type o) -> transform to equivalence
+      typed_equality(a, b, type_o()) ->
+        Logger.notice("applying \"=o\"")
+        equiv = equivalent_term() |> mk_appl_term(a) |> mk_appl_term(b)
+        tableaux([equiv | rest], definitions, state, parameters)
 
-        negated(
-          equality(
-            hol_term(bvars: [], head: hol_term() = h, args: args1, type: t),
-            hol_term(bvars: [], head: h, args: args2, type: t)
-          )
-        ) ->
-          Logger.notice("applying \"¬=ext\"")
+      # negated equality (type o)
+      negated(typed_equality(a, b, type_o())) ->
+        Logger.notice("applying \"¬=o\"")
+        eq = equivalent_term() |> mk_appl_term(a) |> mk_appl_term(b)
+        neg_eq = neg_term() |> mk_appl_term(eq)
+        tableaux([neg_eq | rest], definitions, state, parameters)
 
-          inner_subproblems =
-            Enum.zip(args1, args2)
-            |> Enum.map(fn {t1, t2} ->
-              get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
-            end)
-            |> Enum.reduce(true_term(), fn t, acc ->
-              and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
-            end)
+      # equality (other atomic types) -> Leibnitz equality
+      typed_equality(a, b, type(goal: g, args: [])) when is_atom(g) ->
+        t = type(goal: g, args: [])
 
-          subproblems = mk_appl_term(neg_term(), inner_subproblems)
+        if unknown_type?(t) do
+          Logger.notice("applying \"Atom\"")
+          handle_atom(formula, :pos, rest, definitions, state, parameters)
+        else
+          Logger.notice("applying \"=ι\"")
 
-          tableaux(
-            [subproblems | rest],
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
+          p = mk_uniqe_var(mk_type(:o, [t]))
+          p_term = mk_term(p)
+          p_a = mk_appl_term(p_term, a)
+          p_b = mk_appl_term(p_term, b)
+          pi = pi_const(mk_type(:o, [mk_type(:o, [t])])) |> mk_term()
 
-        negated(
-          equality(
-            hol_term(bvars: [], head: declaration(name: n) = h, args: args1, type: t),
-            hol_term(bvars: [], head: h, args: args2, type: t)
-          )
-        )
-        when n not in signature_symbols() ->
-          Logger.notice("applying \"¬=ext\"")
-
-          inner_subproblems =
-            Enum.zip(args1, args2)
-            |> Enum.map(fn {t1, t2} ->
-              get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
-            end)
-            |> Enum.reduce(true_term(), fn t, acc ->
-              and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
-            end)
-
-          subproblems = mk_appl_term(neg_term(), inner_subproblems)
-
-          tableaux(
-            [subproblems | rest],
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
-
-        ############################# TYPED EQUALITY SYMBOLS ############################
-
-        # equality (type o) -> transform to equivalence
-        typed_equality(a, b, type_o()) ->
-          Logger.notice("applying \"=o\"")
-          equiv = equivalent_term() |> mk_appl_term(a) |> mk_appl_term(b)
-
-          tableaux(
-            [equiv | rest],
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
-
-        # negated equality (type o)
-        negated(typed_equality(a, b, type_o())) ->
-          Logger.notice("applying \"¬=o\"")
-          eq = equivalent_term() |> mk_appl_term(a) |> mk_appl_term(b)
-          neg_eq = neg_term() |> mk_appl_term(eq)
-
-          tableaux(
-            [neg_eq | rest],
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
-
-        # equality (other atomic types) -> Leibnitz equality
-        typed_equality(a, b, type(goal: g, args: [])) when is_atom(g) ->
-          t = type(goal: g, args: [])
-
-          if unknown_type?(t) do
-            Logger.notice("applying \"Atom\"")
-
-            handle_atom(
-              formula,
-              :pos,
-              clause,
-              rest,
-              constraints,
-              definitions,
-              max_inst,
-              instantiation_count,
-              incomplete?
-            )
-          else
-            Logger.notice("applying \"=ι\"")
-
-            p = mk_uniqe_var(mk_type(:o, [t]))
-            p_term = mk_term(p)
-            p_a = mk_appl_term(p_term, a)
-            p_b = mk_appl_term(p_term, b)
-            pi = pi_const(mk_type(:o, [mk_type(:o, [t])])) |> mk_term()
-
-            inner_equiv = equivalent_term() |> mk_appl_term(p_a) |> mk_appl_term(p_b)
-            abstr = inner_equiv |> mk_abstr_term(p)
-            quant = pi |> mk_appl_term(abstr)
-
-            tableaux(
-              [quant | rest],
-              definitions,
-              max_inst,
-              clause,
-              constraints,
-              instantiation_count,
-              incomplete?
-            )
-          end
-
-        # negated equality (other atomic types) -> negated Leibnitz equality
-        negated(typed_equality(a, b, type(goal: g, args: []))) when is_atom(g) ->
-          t = type(goal: g, args: [])
-
-          if unknown_type?(t) do
-            Logger.notice("applying \"Atom\"")
-
-            handle_atom(
-              formula,
-              :neg,
-              clause,
-              rest,
-              constraints,
-              definitions,
-              max_inst,
-              instantiation_count,
-              incomplete?
-            )
-          else
-            Logger.notice("applying \"¬=ι\"")
-
-            p = mk_uniqe_var(mk_type(:o, [t]))
-            p_term = mk_term(p)
-            p_a = mk_appl_term(p_term, a)
-            p_b = mk_appl_term(p_term, b)
-            pi = pi_const(mk_type(:o, [mk_type(:o, [t])])) |> mk_term()
-
-            inner_equiv = equivalent_term() |> mk_appl_term(p_a) |> mk_appl_term(p_b)
-            abstr = inner_equiv |> mk_abstr_term(p)
-            quant = pi |> mk_appl_term(abstr)
-            neg_quant = neg_term() |> mk_appl_term(quant)
-
-            tableaux(
-              [neg_quant | rest],
-              definitions,
-              max_inst,
-              clause,
-              constraints,
-              instantiation_count,
-              incomplete?
-            )
-          end
-
-        # equality (function types) -> functional extensionality
-        typed_equality(a, b, type) ->
-          Logger.notice("applying \"=(α⇾β)\"")
-          [first_arg_type | rest_arg_types] = get_arg_types(type)
-          goal_type = mk_type(get_goal_type(type), rest_arg_types)
-          x = mk_uniqe_var(first_arg_type)
-          x_term = mk_term(x)
-          a_x = mk_appl_term(a, x_term)
-          b_x = mk_appl_term(b, x_term)
-          equals_term = mk_term(equals_const(goal_type))
-          pi = pi_const(mk_type(type_o(), [first_arg_type])) |> mk_term()
-
-          inner_equality = equals_term |> mk_appl_term(a_x) |> mk_appl_term(b_x)
-          abstr = inner_equality |> mk_abstr_term(x)
+          inner_equiv = equivalent_term() |> mk_appl_term(p_a) |> mk_appl_term(p_b)
+          abstr = inner_equiv |> mk_abstr_term(p)
           quant = pi |> mk_appl_term(abstr)
 
-          tableaux(
-            [quant | rest],
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
+          tableaux([quant | rest], definitions, state, parameters)
+        end
 
-        # negated equality (function types) -> negated functional extensionality
-        negated(typed_equality(a, b, type)) ->
-          Logger.notice("applying \"¬=(α⇾β)\"")
-          [first_arg_type | rest_arg_types] = get_arg_types(type)
-          goal_type = mk_type(get_goal_type(type), rest_arg_types)
-          x = mk_uniqe_var(first_arg_type)
-          x_term = mk_term(x)
-          a_x = mk_appl_term(a, x_term)
-          b_x = mk_appl_term(b, x_term)
-          equals_term = mk_term(equals_const(goal_type))
-          pi = pi_const(mk_type(type_o(), [first_arg_type])) |> mk_term()
+      # negated equality (other atomic types) -> negated Leibnitz equality
+      negated(typed_equality(a, b, type(goal: g, args: []))) when is_atom(g) ->
+        t = type(goal: g, args: [])
 
-          inner_equality = equals_term |> mk_appl_term(a_x) |> mk_appl_term(b_x)
-          abstr = inner_equality |> mk_abstr_term(x)
+        if unknown_type?(t) do
+          Logger.notice("applying \"Atom\"")
+          handle_atom(formula, :neg, rest, definitions, state, parameters)
+        else
+          Logger.notice("applying \"¬=ι\"")
+
+          p = mk_uniqe_var(mk_type(:o, [t]))
+          p_term = mk_term(p)
+          p_a = mk_appl_term(p_term, a)
+          p_b = mk_appl_term(p_term, b)
+          pi = pi_const(mk_type(:o, [mk_type(:o, [t])])) |> mk_term()
+
+          inner_equiv = equivalent_term() |> mk_appl_term(p_a) |> mk_appl_term(p_b)
+          abstr = inner_equiv |> mk_abstr_term(p)
           quant = pi |> mk_appl_term(abstr)
           neg_quant = neg_term() |> mk_appl_term(quant)
 
-          tableaux(
-            [neg_quant | rest],
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
+          tableaux([neg_quant | rest], definitions, state, parameters)
+        end
 
-        #################################################################################
-        # LOGICAL CONNECTIVES
-        #################################################################################
+      # equality (function types) -> functional extensionality
+      typed_equality(a, b, type) ->
+        Logger.notice("applying \"=(α⇾β)\"")
+        [first_arg_type | rest_arg_types] = get_arg_types(type)
+        goal_type = mk_type(get_goal_type(type), rest_arg_types)
+        x = mk_uniqe_var(first_arg_type)
+        x_term = mk_term(x)
+        a_x = mk_appl_term(a, x_term)
+        b_x = mk_appl_term(b, x_term)
+        equals_term = mk_term(equals_const(goal_type))
+        pi = pi_const(mk_type(type_o(), [first_arg_type])) |> mk_term()
 
-        # disjunction
-        disjunction(a, b) ->
-          Logger.notice("applying \"∨\"")
+        inner_equality = equals_term |> mk_appl_term(a_x) |> mk_appl_term(b_x)
+        abstr = inner_equality |> mk_abstr_term(x)
+        quant = pi |> mk_appl_term(abstr)
 
-          branch(
-            a,
-            b,
-            rest,
-            clause,
-            constraints,
-            definitions,
-            max_inst,
-            instantiation_count,
-            incomplete?
-          )
+        tableaux([quant | rest], definitions, state, parameters)
 
-        # negated disjunction
-        negated(disjunction(a, b)) ->
-          Logger.notice("applying \"¬∨\"")
+      # negated equality (function types) -> negated functional extensionality
+      negated(typed_equality(a, b, type)) ->
+        Logger.notice("applying \"¬=(α⇾β)\"")
+        [first_arg_type | rest_arg_types] = get_arg_types(type)
+        goal_type = mk_type(get_goal_type(type), rest_arg_types)
+        x = mk_uniqe_var(first_arg_type)
+        x_term = mk_term(x)
+        a_x = mk_appl_term(a, x_term)
+        b_x = mk_appl_term(b, x_term)
+        equals_term = mk_term(equals_const(goal_type))
+        pi = pi_const(mk_type(type_o(), [first_arg_type])) |> mk_term()
 
-          tableaux(
-            [sem_negate(a), sem_negate(b) | rest],
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
+        inner_equality = equals_term |> mk_appl_term(a_x) |> mk_appl_term(b_x)
+        abstr = inner_equality |> mk_abstr_term(x)
+        quant = pi |> mk_appl_term(abstr)
+        neg_quant = neg_term() |> mk_appl_term(quant)
 
-        # conjunction
-        conjunction(a, b) ->
-          Logger.notice("applying \"∧\"")
+        tableaux([neg_quant | rest], definitions, state, parameters)
 
-          tableaux(
-            [a, b | rest],
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
+      #################################################################################
+      # LOGICAL CONNECTIVES
+      #################################################################################
 
-        # negated conjunction
-        negated(conjunction(a, b)) ->
-          Logger.notice("applying \"¬∧\"")
+      # disjunction
+      disjunction(a, b) ->
+        Logger.notice("applying \"∨\"")
+        branch(a, b, rest, definitions, state, parameters)
 
-          branch(
-            sem_negate(a),
-            sem_negate(b),
-            rest,
-            clause,
-            constraints,
-            definitions,
-            max_inst,
-            instantiation_count,
-            incomplete?
-          )
+      # negated disjunction
+      negated(disjunction(a, b)) ->
+        Logger.notice("applying \"¬∨\"")
+        tableaux([sem_negate(a), sem_negate(b) | rest], definitions, state, parameters)
 
-        # implication
-        implication(a, b) ->
-          Logger.notice("applying \"⊃\"")
+      # conjunction
+      conjunction(a, b) ->
+        Logger.notice("applying \"∧\"")
+        tableaux([a, b | rest], definitions, state, parameters)
 
-          branch(
-            sem_negate(a),
-            b,
-            rest,
-            clause,
-            constraints,
-            definitions,
-            max_inst,
-            instantiation_count,
-            incomplete?
-          )
+      # negated conjunction
+      negated(conjunction(a, b)) ->
+        Logger.notice("applying \"¬∧\"")
+        branch(sem_negate(a), sem_negate(b), rest, definitions, state, parameters)
 
-        # negated implication
-        negated(implication(a, b)) ->
-          Logger.notice("applying \"¬⊃\"")
+      # implication
+      implication(a, b) ->
+        Logger.notice("applying \"⊃\"")
+        branch(sem_negate(a), b, rest, definitions, state, parameters)
 
-          tableaux(
-            [a, sem_negate(b) | rest],
-            definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
-          )
+      # negated implication
+      negated(implication(a, b)) ->
+        Logger.notice("applying \"¬⊃\"")
+        tableaux([a, sem_negate(b) | rest], definitions, state, parameters)
 
-        # equivalence
-        equivalence(a, b) ->
-          Logger.notice("applying \"≡\"")
+      # equivalence
+      equivalence(a, b) ->
+        Logger.notice("applying \"≡\"")
+        branch([a, b], [sem_negate(a), sem_negate(b)], rest, definitions, state, parameters)
 
-          branch(
-            [a, b],
-            [sem_negate(a), sem_negate(b)],
-            rest,
-            clause,
-            constraints,
-            definitions,
-            max_inst,
-            instantiation_count,
-            incomplete?
-          )
+      # negated equivalence
+      negated(equivalence(a, b)) ->
+        Logger.notice("applying \"¬≡\"")
+        branch([sem_negate(a), b], [a, sem_negate(b)], rest, definitions, state, parameters)
 
-        # negated equivalence
-        negated(equivalence(a, b)) ->
-          Logger.notice("applying \"¬≡\"")
+      #################################################################################
+      # QUANTORS
+      #################################################################################
 
-          branch(
-            [sem_negate(a), b],
-            [a, sem_negate(b)],
-            rest,
-            clause,
-            constraints,
-            definitions,
-            max_inst,
-            instantiation_count,
-            incomplete?
-          )
+      # universal quantification -> fresh variable (can be repeated!)
+      universal_quantification(body) ->
+        Logger.notice("applying \"Π\"")
+        count = Map.get(state.inst_count, formula, 0)
 
-        #################################################################################
-        # QUANTORS
-        #################################################################################
-
-        # universal quantification -> fresh variable (can be repeated!)
-        universal_quantification(body) ->
-          Logger.notice("applying \"Π\"")
-          count = Map.get(instantiation_count, formula, 0)
-
-          if count < max_inst do
-            type(args: [type]) = get_term_type(body)
-            new_instantiation_count = Map.put(instantiation_count, formula, count + 1)
-            fresh_variable = mk_term(mk_uniqe_var(type))
-            fresh_instance = mk_appl_term(body, fresh_variable)
-
-            tableaux(
-              [fresh_instance | rest] ++ [formula],
-              definitions,
-              max_inst,
-              clause,
-              constraints,
-              new_instantiation_count,
-              incomplete?
-            )
-          else
-            # skip the universal quantification - upper bound of instantiations reached
-            Logger.info("instantiation limit exceeded")
-            tableaux(rest, definitions, max_inst, clause, constraints, instantiation_count, true)
-          end
-
-        # negated universal quantification -> skolemization
-        negated(universal_quantification(body)) ->
-          Logger.notice("applying \"¬Π\"")
-
+        if count < parameters.max_instantiations do
           type(args: [type]) = get_term_type(body)
+          new_inst_count = Map.put(state.inst_count, formula, count + 1)
+          fresh_variable = mk_term(mk_uniqe_var(type))
+          fresh_instance = mk_appl_term(body, fresh_variable)
 
           tableaux(
-            [
-              mk_appl_term(
-                neg_term(),
-                mk_appl_term(body, mk_new_skolem_term(get_fvars(body), type))
-              )
-              | rest
-            ],
+            [fresh_instance | rest] ++ [formula],
             definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
+            %State{state | inst_count: new_inst_count},
+            parameters
           )
+        else
+          # skip the universal quantification - upper bound of instantiations reached
+          Logger.info("instantiation limit exceeded")
+          tableaux(rest, definitions, %State{state | incomplete?: true}, parameters)
+        end
 
-        # existential quantification -> skolemization
-        existential_quantification(body) ->
-          Logger.notice("applying \"Σ\"")
+      # negated universal quantification -> skolemization
+      negated(universal_quantification(body)) ->
+        Logger.notice("applying \"¬Π\"")
 
+        type(args: [type]) = get_term_type(body)
+
+        tableaux(
+          [sem_negate(mk_appl_term(body, mk_new_skolem_term(get_fvars(body), type))) | rest],
+          definitions,
+          state,
+          parameters
+        )
+
+      # existential quantification -> skolemization
+      existential_quantification(body) ->
+        Logger.notice("applying \"Σ\"")
+
+        type(args: [type]) = get_term_type(body)
+
+        tableaux(
+          [mk_appl_term(body, mk_new_skolem_term(get_fvars(body), type)) | rest],
+          definitions,
+          state,
+          parameters
+        )
+
+      # negated existential quantification -> fresh variable (can be repeated!)
+      negated(existential_quantification(body)) ->
+        Logger.notice("applying \"¬Σ\"")
+        count = Map.get(state.inst_count, formula, 0)
+
+        if count < parameters.max_instantiations do
           type(args: [type]) = get_term_type(body)
+          new_inst_count = Map.put(state.inst_count, formula, count + 1)
+          fresh_variable = mk_term(mk_uniqe_var(type))
+          fresh_instance = syn_negate(mk_appl_term(body, fresh_variable))
 
           tableaux(
-            [mk_appl_term(body, mk_new_skolem_term(get_fvars(body), type)) | rest],
+            [fresh_instance | rest] ++ [formula],
             definitions,
-            max_inst,
-            clause,
-            constraints,
-            instantiation_count,
-            incomplete?
+            %State{state | inst_count: new_inst_count},
+            parameters
           )
-
-        # negated existential quantification -> fresh variable (can be repeated!)
-        negated(existential_quantification(body)) ->
-          Logger.notice("applying \"¬Σ\"")
-          count = Map.get(instantiation_count, formula, 0)
-
-          if count < max_inst do
-            type(args: [type]) = get_term_type(body)
-            new_instantiation_count = Map.put(instantiation_count, formula, count + 1)
-            fresh_variable = mk_term(mk_uniqe_var(type))
-            fresh_instance = syn_negate(mk_appl_term(body, fresh_variable))
-
-            tableaux(
-              [fresh_instance | rest] ++ [formula],
-              definitions,
-              max_inst,
-              clause,
-              constraints,
-              new_instantiation_count,
-              incomplete?
-            )
-          else
-            # skip the negated existential quantification - upper bound of instantiations reached
-            Logger.info("instantiation limit exceeded")
-            tableaux(rest, definitions, max_inst, clause, constraints, instantiation_count, true)
-          end
-      end
+        else
+          # skip the negated existential quantification - upper bound of instantiations reached
+          Logger.info("instantiation limit exceeded")
+          tableaux(rest, definitions, %State{state | incomplete?: true}, parameters)
+        end
     end
   end
 
