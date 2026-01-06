@@ -98,25 +98,25 @@ defmodule THOU.Parser.TypeInference do
             "Type Error: Cannot unify #{inspect(t1)} with #{inspect(t2)} under substitutions #{inspect(subst)}."
           )
         else
-          if occurs?(g1, t2), do: raise("Type Error: Recursive type check failed (Occurs check)")
-          new_g1_type = mk_type(g2, Enum.drop(args2, length(args1)))
+          {shared_args2, extra_args2} = Enum.split(args2, length(args1))
 
-          # Map.put(subst, t1, type(goal: new_g1_type, args: args1))
-          unify(g1, new_g1_type, subst)
+          subst_after_args =
+            Enum.zip(args1, shared_args2)
+            |> Enum.reduce(subst, fn {a1, a2}, acc ->
+              unify(apply_subst(a1, acc), apply_subst(a2, acc), acc)
+            end)
+
+          tail_type = mk_type(g2, extra_args2)
+
+          unify(
+            apply_subst(g1, subst_after_args),
+            apply_subst(tail_type, subst_after_args),
+            subst_after_args
+          )
         end
 
       length(args1) > length(args2) ->
-        if not unknown_type?(g2) do
-          raise(
-            "Type Error: Cannot unify #{inspect(t1)} with #{inspect(t2)} under substitutions #{inspect(subst)}."
-          )
-        else
-          if occurs?(g2, t1), do: raise("Type Error: Recursive type check failed (Occurs check)")
-          new_g2_type = mk_type(g1, Enum.drop(args1, length(args2)))
-
-          # Map.put(subst, t2, type(goal: new_g2_type, args: args2))
-          unify(g2, new_g2_type, subst)
-        end
+        unify(t2, t1, subst)
     end
   end
 

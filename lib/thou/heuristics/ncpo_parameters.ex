@@ -74,6 +74,9 @@ defmodule THOU.Heuristics.NCPOParameters do
 
       get_goal_safe(t) == get_goal_safe(u) ->
         lexicographic_gt?(get_args_safe(t), get_args_safe(u))
+
+      true ->
+        false
     end
   end
 

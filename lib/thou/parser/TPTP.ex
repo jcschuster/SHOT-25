@@ -9,6 +9,10 @@ defmodule THOU.Parser.TPTP do
     defstruct path: "", includes: [], types: %{}, definitions: [], axioms: [], conjecture: nil
   end
 
+  #############################################################################
+  # TERM TO TPTP REPRESENTATION
+  #############################################################################
+
   def type_to_tptp(:o), do: "$o"
   def type_to_tptp(:i), do: "$i"
   def type_to_tptp(a) when is_atom(a), do: Atom.to_string(a)
@@ -236,6 +240,10 @@ defmodule THOU.Parser.TPTP do
 
   defp collect_quantified_vars(_quantifier, term, acc), do: {acc, term}
 
+  #############################################################################
+  # TPTP REPRESENTATION TO TERM
+  #############################################################################
+
   def parse_file(problem, is_tptp \\ true) do
     path =
       if is_tptp and System.get_env("TPTP_ROOT") == nil do
@@ -368,13 +376,31 @@ defmodule THOU.Parser.TPTP do
   end
 
   defp build_context(problem) do
-    Enum.reduce(problem.types, Context.new(), fn
-      {_name, :base_type}, ctx ->
-        ctx
+    ctx_with_types =
+      Enum.reduce(problem.types, Context.new(), fn
+        {_name, :base_type}, ctx ->
+          ctx
 
-      {name, type_struct}, ctx ->
-        Context.put_const(ctx, name, type_struct)
+        {name, type_struct}, ctx ->
+          Context.put_const(ctx, name, type_struct)
+      end)
+
+    Enum.reduce(problem.definitions, ctx_with_types, fn {_name, term}, ctx ->
+      case extract_defined_constant(term) do
+        {name, type} -> Context.put_const(ctx, name, type)
+        nil -> ctx
+      end
     end)
+  end
+
+  defp extract_defined_constant(equality(lhs, _rhs)) do
+    case lhs do
+      hol_term(head: declaration(kind: :co, name: name, type: type)) ->
+        {name, type}
+
+      _ ->
+        nil
+    end
   end
 
   defp merge_problems(main, included) do

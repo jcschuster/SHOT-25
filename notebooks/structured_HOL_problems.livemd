@@ -2,7 +2,6 @@
 
 ```elixir
 Mix.install([
-  {:rustler, "~> 0.37.1", runtime: false},
   {:thou, path: Path.join(__DIR__, "..")},
   {:kino, "~> 0.17.0"}
 ])
@@ -456,7 +455,7 @@ thf(conj,conjecture,
 ((![X : $i]: (leibnitz_eq_i @ (f @ X) @ X)) & (p @ ^[X : $i] : X)) => p @ f
 ).")
 
-# run_prover(problem)
+#run_prover(problem)
 # -> timeout
 ```
 
@@ -512,8 +511,7 @@ Example 18
 leibnitz_eq_i @ (h @ (leibnitz_eq_i @ (h @ $true) @ (h @ $false))) @ (h @ $false)
 ).")
 
-#run_prover(problem)
-# -> timeout
+run_prover(problem)
 ```
 
 ```elixir
