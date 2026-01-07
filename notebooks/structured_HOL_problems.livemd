@@ -15,6 +15,7 @@ import THOU.Prover
 import THOU.Parser.Parser
 import THOU.Parser.TPTP
 import THOU.Runner
+import THOU.PrettyPrint
 alias THOU.Parser.Parser.Context
 
 Logger.configure(level: :error)
@@ -189,8 +190,8 @@ run_prover(problem)
   )
 ).")
 
-#run_prover(problem)
-# Status: Theorem after a long time
+run_prover(problem)
+# -> timeout
 ```
 
 Example 7a)
@@ -300,7 +301,7 @@ run_prover(problem)
 
 ```elixir
 "![F : $i>$i, G : $i>$i]: ((F = G) => (![X : $i]: ((F @ X) = (G @ X))))"
-  |> parse |> prove
+  |> parse |> prove |> pp_proof_result |> IO.puts
 ```
 
 Example 9b)
@@ -325,7 +326,7 @@ run_prover(problem)
 
 ```elixir
 "![A : $o, B : $o]: ((A = B) => (A <=> B))"
-  |> parse |> prove
+  |> parse |> prove |> pp_proof_result |> IO.puts
 ```
 
 Example 10
@@ -350,7 +351,7 @@ run_prover(problem)
 
 ```elixir
 "![A : $o, B : $o]: ((A <=> B) => (A = B))"
-  |> parse |> prove
+  |> parse |> prove |> pp_proof_result |> IO.puts
 ```
 
 Example 11
@@ -394,13 +395,13 @@ run_prover(problem)
   ))
 ).")
 
-#run_prover(problem)
+run_prover(problem)
 # -> timeout
 ```
 
 ```elixir
 "![F : $i>$i, G : $i>$i]: ((![X : $i]: ((F @ X) = (G @ X))) => F = G)"
-  |> parse |> prove
+  |> parse |> prove |> pp_proof_result |> IO.puts
 ```
 
 ## 5.2 Extensionality
@@ -412,7 +413,7 @@ ctx = Context.new()
   |> Context.put_const("f", mk_type(:i, [mk_type(:i)]))
 
 "(p @ (^[X : $i] : f @ X)) => p @ f"
-  |> parse(ctx) |> prove
+  |> parse(ctx) |> prove |> pp_proof_result |> IO.puts
 ```
 
 Example 13
@@ -423,7 +424,7 @@ Example 13
 ((![X : $i]: (leibnitz_eq_i @ (f @ X) @ X)) & (p @ ^[X : $i] : X)) => p @ ^[X : $i]: f @ X
 ).")
 
-#run_prover(problem)
+run_prover(problem)
 # -> timeout
 ```
 
@@ -442,8 +443,8 @@ ctx = Context.new() |> Context.put_const("f", mk_type(:i, [mk_type(:i)]))
 
 "(![X : $i]: ((f @ X) = X)) & (p @ (^[X : $i] : X)) => (p @ (^[X : $i]: f @ X))"
   |> parse(ctx)
-#  |> prove
-# -> timeout
+  |> prove
+  |> pp_proof_result |> IO.puts
 ```
 
 Example 14
@@ -455,8 +456,7 @@ thf(conj,conjecture,
 ((![X : $i]: (leibnitz_eq_i @ (f @ X) @ X)) & (p @ ^[X : $i] : X)) => p @ f
 ).")
 
-#run_prover(problem)
-# -> timeout
+run_prover(problem)
 ```
 
 ```elixir
@@ -473,34 +473,32 @@ run_prover(problem)
 ctx = Context.new() |> Context.put_const("f", mk_type(:i, [mk_type(:i)]))
 
 "(![X : $i]: ((f @ X) = X)) & (p @ (^[X : $i] : X)) => (p @ f)"
-  |> parse(ctx)
-#  |> prove
-# -> timeout
+  |> parse(ctx) |> prove |> pp_proof_result |> IO.puts
 ```
 
 Example 15
 
 ```elixir
 "p @ (a & b) => p @ (b & a)"
-  |> parse |> prove
+  |> parse |> prove |> pp_proof_result |> IO.puts
 ```
 
 ```elixir
 "a & b & p @ a => p @ b"
-  |> parse |> prove
+  |> parse |> prove |> pp_proof_result |> IO.puts
 ```
 
 Example 16
 
 ```elixir
 "p @ a & p @ b => p @ (a & b)"
-  |> parse |> prove
+  |> parse |> prove |> pp_proof_result |> IO.puts
 ```
 
 Example 17
 
 ```elixir
-"~(a = (~a))" |> parse |> prove
+"~(a = (~a))" |> parse |> prove |> pp_proof_result |> IO.puts
 ```
 
 Example 18
@@ -529,7 +527,7 @@ ctx = Context.new()
   |> Context.put_const("h", mk_type(:i, [mk_type(:o)]))
 
 "(h @ ((h @ $true) = (h @ $false))) = (h @ $false)"
-  |> parse(ctx) |> prove
+  |> parse(ctx) |> prove |> pp_proof_result |> IO.puts
 ```
 
 Example 19
@@ -542,14 +540,14 @@ ctx = Context.new()
   |> Context.put_const("b", mk_type(:o))
 
 "(p @ (^[X : $i]: f @ ((a @ (^[X : $i]: f @ b @ X)) & b) @ X)) => p @ (f @ (b & (a @ (f @ b))))"
-  |> parse(ctx) |> prove
+  |> parse(ctx) |> prove |> pp_proof_result |> IO.puts
 ```
 
 Example 20a)
 
 ```elixir
 "![X : $o, Y : $o]: X & Y => ~(~X | ~Y)"
-  |> parse |> prove
+  |> parse |> prove |> pp_proof_result |> IO.puts
 ```
 
 Example 20b)
@@ -574,7 +572,7 @@ run_prover(problem)
 
 ```elixir
 "![X : $o, Y : $o]: ((X & Y) = (~(~X | ~Y)))"
-  |> parse |> prove
+  |> parse |> prove |> pp_proof_result |> IO.puts
 ```
 
 Example 20c)
@@ -599,7 +597,7 @@ run_prover(problem)
 
 ```elixir
 "(^[U : $o, V: $o] : U & V) = (^[X : $o, Y : $o]: ~(~X | ~Y))"
-  |> parse |> prove
+  |> parse |> prove |> pp_proof_result |> IO.puts
 ```
 
 Example 20d)
@@ -624,7 +622,7 @@ run_prover(problem)
 
 ```elixir
 "(&) = (^[X : $o, Y : $o]: ~(~X | ~Y))"
-  |> parse |> prove
+  |> parse |> prove |> pp_proof_result |> IO.puts
 ```
 
 Example 21
@@ -639,5 +637,5 @@ Example 21
 )
 =>
 ![Y : $o>$o]: p @ Y
-" |> parse |> prove
+" |> parse |> prove |> pp_proof_result |> IO.puts
 ```

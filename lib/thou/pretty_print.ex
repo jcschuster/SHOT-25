@@ -1,7 +1,7 @@
 defmodule THOU.PrettyPrint do
   import THOU.HOL.Patterns, only: [negated: 1]
 
-  def pp_assignment(clause) when is_map(clause) do
+  def pp_assignment(clause) when is_struct(clause, MapSet) do
     pretty_assignments =
       Enum.map(clause, fn t ->
         case t do

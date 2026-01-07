@@ -1,3 +1,22 @@
+defmodule THOU.Prover.Model do
+  defstruct assignments: MapSet.new(), constraints: []
+
+  @type t() :: %__MODULE__{
+          assignments: MapSet.t(),
+          constraints: [{HOL.Data.hol_term(), HOL.Data.hol_term()}]
+        }
+end
+
+defimpl String.Chars, for: THOU.Prover.Model do
+  import THOU.PrettyPrint
+
+  def to_string(model) do
+    assignments_str = pp_assignment(model.assignments)
+    constraints_str = pp_constraints(model.constraints)
+    "#{assignments_str} || #{constraints_str}"
+  end
+end
+
 defmodule THOU.Prover do
   import HOL.Data
   import HOL.Terms
@@ -34,34 +53,19 @@ defmodule THOU.Prover do
           | {:countersat, Model.t()}
           | {:unknown, Model.t() | nil, atom()}
 
-  defmodule Model do
-    defstruct assignments: MapSet.new(), constraints: []
-
-    @type t() :: %__MODULE__{
-            assignments: MapSet.t(),
-            constraints: [{HOL.Data.hol_term(), HOL.Data.hol_term()}]
-          }
-
-    defimpl String.Chars, for: __MODULE__ do
-      def to_string(model) do
-        assignments_str = pp_assignment(model.clause)
-        constraints_str = pp_constraints(model.constraints)
-        "#{assignments_str} || #{constraints_str}"
-      end
-    end
-  end
-
   defmodule Parameters do
     defstruct canonicalize: true,
               branch_heuristic: :ncpo,
               max_instantiations: 4,
-              unification_depth: 8
+              unification_depth: 8,
+              max_concurrency: System.schedulers_online() * 2
 
     @type t() :: %__MODULE__{
             canonicalize: boolean(),
             branch_heuristic: atom() | nil,
             max_instantiations: pos_integer(),
-            unification_depth: pos_integer()
+            unification_depth: pos_integer(),
+            max_concurrency: pos_integer()
           }
 
     @spec new() :: t()
@@ -76,11 +80,14 @@ defmodule THOU.Prover do
 
       unification_depth = Keyword.get(opts, :unification_depth, default_params.unification_depth)
 
+      max_concurrency = Keyword.get(opts, :max_concurrency, default_params.max_concurrency)
+
       %__MODULE__{
         canonicalize: canonicalize,
         branch_heuristic: branch_heuristic,
         max_instantiations: max_instantiations,
-        unification_depth: unification_depth
+        unification_depth: unification_depth,
+        max_concurrency: max_concurrency
       }
     end
   end
@@ -269,51 +276,51 @@ defmodule THOU.Prover do
           _ ->
             # Try checkpoints on right branch and propagate up
             {new_checkpoints, last_open} =
-              Enum.reduce_while(unif_checkpoints, {[], nil}, fn unif_checkpoint(
-                                                                  substs: substitutions,
-                                                                  constrs: remaining
-                                                                ),
-                                                                {checkpoints, prev_open} ->
-                new_rest = apply_subst(substitutions, rest)
-                new_clause = apply_subst(substitutions, state.clause)
-                new_right_side = apply_subst(substitutions, right_side)
+              unif_checkpoints
+              |> Task.async_stream(
+                fn unif_checkpoint(substs: substitutions, constrs: remaining) = cpt ->
+                  new_rest = apply_subst(substitutions, rest)
+                  new_clause = apply_subst(substitutions, state.clause)
+                  new_right_side = apply_subst(substitutions, right_side)
 
-                case tableaux(
-                       new_right_side ++ new_rest,
-                       definitions,
-                       %State{state | clause: new_clause, constraints: remaining},
-                       parameters
-                     ) do
+                  res =
+                    tableaux(
+                      new_right_side ++ new_rest,
+                      definitions,
+                      %State{state | clause: new_clause, constraints: remaining},
+                      parameters
+                    )
+
+                  {cpt, res}
+                end,
+                max_concurrency: parameters.max_concurrency,
+                timeout: :infinity,
+                ordered: false
+              )
+              |> Enum.map(fn {:ok, res} -> res end)
+              |> Enum.reduce_while({[], nil}, fn {cpt, res}, {acc_cpts, acc_open} ->
+                case res do
                   {:closed, new_cpts} ->
                     added_cpts =
-                      if new_cpts == [] do
-                        [unif_checkpoint(substs: substitutions, constrs: remaining)]
+                      if Enum.empty?(new_cpts) do
+                        [cpt]
                       else
-                        Enum.map(
-                          new_cpts,
-                          fn {:unif_checkpoint, new_substs, new_remaining} ->
-                            updated_substitutions = apply_subst(new_substs, substitutions)
-                            {:unif_checkpoint, updated_substitutions ++ new_substs, new_remaining}
-                          end
-                        )
+                        Enum.map(new_cpts, fn unif_checkpoint(substs: new_substs) = ci ->
+                          unif_checkpoint(substs: old_substs) = cpt
+
+                          unif_checkpoint(ci,
+                            substs: apply_subst(new_substs, old_substs) ++ new_substs
+                          )
+                        end)
                       end
 
-                    combined_checkpoints = checkpoints ++ added_cpts
+                    {:halt, {acc_cpts ++ added_cpts, acc_open}}
 
-                    {:halt, {combined_checkpoints, prev_open}}
-
-                  {:open, right_clause, right_constraints} ->
-                    {:cont, {checkpoints, {:open, right_clause, right_constraints}}}
+                  {:open, _, _} = open_res ->
+                    {:cont, {acc_cpts, open_res}}
 
                   other ->
-                    case prev_open do
-                      nil ->
-                        {:cont, {checkpoints, other}}
-
-                      _ ->
-                        # don't overwrite :open branches with :incomplete
-                        {:cont, {checkpoints, prev_open}}
-                    end
+                    {:cont, {acc_cpts, acc_open || other}}
                 end
               end)
 
