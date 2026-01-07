@@ -2,7 +2,6 @@ defmodule THOU.Parser.Parser do
   import HOL.Data
   import HOL.Terms
   import THOU.HOL.Definitions
-  import THOU.Util
   alias THOU.Parser.TPTPTokenizer, as: Tokenizer
   alias THOU.Parser.TypeInference
 
@@ -597,4 +596,19 @@ defmodule THOU.Parser.Parser do
   defp parse_atomic([], _ctx) do
     raise "Syntax Error: Unexpected end of input."
   end
+
+  defp mk_new_unknown_type() do
+    mk_type(:"__unknown_#{System.unique_integer([:positive, :monotonic])}")
+  end
+
+  @spec unknown_type?(HOL.Data.type() | atom()) :: boolean()
+  defp unknown_type?(t) when is_atom(t) do
+    String.starts_with?(Atom.to_string(t), "__unknown_")
+  end
+
+  defp unknown_type?(type(goal: g)) do
+    is_atom(g) and unknown_type?(g)
+  end
+
+  defp unknown_type?(_), do: false
 end

@@ -2,30 +2,87 @@ defmodule THOU.Prover do
   import HOL.Data
   import HOL.Terms
   import HOL.Unification
-  import THOU.Util
   import THOU.HOL.Definitions
   import THOU.HOL.Patterns
+  import THOU.Util
+  import THOU.PrettyPrint
   alias THOU.Preprocessing.Rewriting
   alias THOU.Heuristics.NCPO
+  alias THOU.Prover.{Model, Parameters, State}
   require Logger
   require Record
 
   Record.defrecord(:unif_checkpoint, substs: nil, constrs: nil)
 
-  @type unif_checkpoint() ::
-          {:unif_checkpoint, [HOL.Data.substitution()],
-           [{HOL.Data.hol_term(), HOL.Data.hol_term()}]}
+  @type definitions() :: %{String.t() => HOL.Data.hol_term()}
 
   @type tableaux_res() ::
           {:closed, [unif_checkpoint()]}
-          | {:open, MapSet.t(), [HOL.Data.hol_term()]}
-          | {:incomplete, MapSet.t(), [HOL.Data.hol_term()]}
+          | {:open, MapSet.t(HOL.Data.hol_term()), [HOL.Data.hol_term()]}
+          | {:incomplete, MapSet.t(HOL.Data.hol_term()), [HOL.Data.hol_term()]}
+
+  @type unif_checkpoint() ::
+          {:unif_checkpoint, [HOL.Data.substitution()], [HOL.Data.Unification.term_pair()]}
+
+  @type sat_result ::
+          {:unknown, Model.t() | nil, :incomplete | :timeout}
+          | {:unsat, :closed}
+          | {:sat, Model.t()}
+
+  @type proof_result ::
+          {:valid, :proven}
+          | {:countersat, Model.t()}
+          | {:unknown, Model.t() | nil, atom()}
+
+  defmodule Model do
+    defstruct assignments: MapSet.new(), constraints: []
+
+    @type t() :: %__MODULE__{
+            assignments: MapSet.t(),
+            constraints: [{HOL.Data.hol_term(), HOL.Data.hol_term()}]
+          }
+
+    defimpl String.Chars, for: __MODULE__ do
+      def to_string(model) do
+        assignments_str = pp_assignment(model.clause)
+        constraints_str = pp_constraints(model.constraints)
+        "#{assignments_str} || #{constraints_str}"
+      end
+    end
+  end
 
   defmodule Parameters do
     defstruct canonicalize: true,
               branch_heuristic: :ncpo,
               max_instantiations: 4,
               unification_depth: 8
+
+    @type t() :: %__MODULE__{
+            canonicalize: boolean(),
+            branch_heuristic: atom() | nil,
+            max_instantiations: pos_integer(),
+            unification_depth: pos_integer()
+          }
+
+    @spec new() :: t()
+    def new(opts \\ []) do
+      default_params = %__MODULE__{}
+
+      canonicalize = Keyword.get(opts, :canonicalize, default_params.canonicalize)
+      branch_heuristic = Keyword.get(opts, :branch_heuristic, default_params.branch_heuristic)
+
+      max_instantiations =
+        Keyword.get(opts, :max_instantiations, default_params.max_instantiations)
+
+      unification_depth = Keyword.get(opts, :unification_depth, default_params.unification_depth)
+
+      %__MODULE__{
+        canonicalize: canonicalize,
+        branch_heuristic: branch_heuristic,
+        max_instantiations: max_instantiations,
+        unification_depth: unification_depth
+      }
+    end
   end
 
   defmodule State do
@@ -33,28 +90,71 @@ defmodule THOU.Prover do
               constraints: [],
               incomplete?: false,
               inst_count: %{}
+
+    @type t() :: %__MODULE__{
+            clause: MapSet.t(),
+            constraints: [{HOL.Data.hol_term(), HOL.Data.hol_term()}],
+            incomplete?: boolean(),
+            inst_count: %{HOL.Data.hol_term() => pos_integer()}
+          }
+
+    @spec new() :: t()
+    def new(), do: %__MODULE__{}
   end
 
-  def sat(formulas, definitions \\ %{})
+  @spec sat([HOL.Data.hol_term()], definitions(), Keyword.t()) :: sat_result()
+  def sat(formulas, definitions \\ %{}, opts \\ [])
 
-  def sat(formulas, definitions) when is_list(formulas) do
-    tableaux(formulas, definitions, %State{}, %Parameters{})
+  def sat(formulas, definitions, opts) when is_list(formulas) do
+    default_params = Parameters.new()
+
+    timeout = Keyword.get(opts, :timeout, 30_000)
+    canonicalize = Keyword.get(opts, :canonicalize, default_params.canonicalize)
+    branch_heuristic = Keyword.get(opts, :branch_heuristic, default_params.branch_heuristic)
+    max_instantiations = Keyword.get(opts, :max_instantiations, default_params.max_instantiations)
+    unification_depth = Keyword.get(opts, :unification_depth, default_params.unification_depth)
+
+    task =
+      Task.async(fn ->
+        tableaux(
+          formulas,
+          definitions,
+          State.new(),
+          Parameters.new(
+            canonicalize: canonicalize,
+            branch_heuristic: branch_heuristic,
+            max_instantiations: max_instantiations,
+            unification_depth: unification_depth
+          )
+        )
+      end)
+
+    case Task.yield(task, timeout) do
+      {:ok, res} ->
+        res
+
+      nil ->
+        Task.shutdown(task, :brutal_kill)
+        :timeout
+    end
     |> as_assignment()
   end
 
-  def sat(formula, definitions), do: sat([formula], definitions)
+  def sat(formula, definitions, opts), do: sat([formula], definitions, opts)
 
-  def prove(conclusion, assumptions \\ [], definitions \\ []) do
+  @spec prove(HOL.Data.hol_term(), [HOL.Data.hol_term()], definitions(), Keyword.t()) ::
+          proof_result()
+  def prove(conclusion, assumptions \\ [], definitions \\ %{}, opts \\ []) do
     neg_conclusion = sem_negate(conclusion)
 
-    case sat([neg_conclusion | assumptions], definitions) do
-      :unsat -> :valid
-      {:unknown, assignment} -> {:unknown, assignment}
-      assignment -> {:countersat, assignment}
+    case sat([neg_conclusion | assumptions], definitions, opts) do
+      {:unsat, _} -> {:valid, :proven}
+      {:unknown, partial_model, reason} -> {:unknown, partial_model, reason}
+      {:sat, counter_model} -> {:countersat, counter_model}
     end
   end
 
-  def unify_with_literals(formula, literals, constraints, parameters) do
+  defp unify_with_literals(formula, literals, constraints, parameters) do
     Enum.reduce(literals, [], fn lit, solutions ->
       ("Trying to unify #{PrettyPrint.pp_term(formula)} with literal #{PrettyPrint.pp_term(lit)}" <>
          " under constraints #{pp_constraints(constraints)}")
@@ -79,9 +179,9 @@ defmodule THOU.Prover do
           HOL.Data.hol_term(),
           :pos | :neg,
           [HOL.Data.hol_term()],
-          Map,
-          State,
-          Parameters
+          definitions(),
+          State.t(),
+          Parameters.t()
         ) ::
           tableaux_res()
   defp handle_atom(formula, polarity, rest, definitions, state, parameters) do
@@ -102,7 +202,7 @@ defmodule THOU.Prover do
         [] ->
           unify_with_literals(
             sem_negate(formula),
-            syn_negate(unif_set),
+            sem_negate(unif_set),
             state.constraints,
             parameters
           )
@@ -127,12 +227,12 @@ defmodule THOU.Prover do
   end
 
   @spec branch(
-          HOL.Data.hol_term(),
-          HOL.Data.hol_term(),
+          HOL.Data.hol_term() | [HOL.Data.hol_term()],
+          HOL.Data.hol_term() | [HOL.Data.hol_term()],
           [HOL.Data.hol_term()],
-          Map,
-          State,
-          Parameters
+          definitions(),
+          State.t(),
+          Parameters.t()
         ) ::
           tableaux_res()
   defp branch(a, b, rest, definitions, state, parameters) do
@@ -226,7 +326,8 @@ defmodule THOU.Prover do
     end
   end
 
-  @spec tableaux([HOL.Data.hol_term()], Map, State, Parameters) :: tableaux_res()
+  @spec tableaux([HOL.Data.hol_term()], definitions(), State.t(), Parameters.t()) ::
+          tableaux_res()
   defp tableaux([], _, %State{} = state, _) do
     if state.incomplete? do
       # empty formulas and incomplete flag -> rules exhausted while max_inst met
@@ -663,18 +764,20 @@ defmodule THOU.Prover do
 
   defp as_assignment({:closed, _}) do
     "All branches closed -> unsatisfiable" |> Logger.notice()
-    :unsat
+    {:unsat, :closed}
   end
 
   defp as_assignment({:open, clause, constraints}) do
     "Some branches still open -> countermodel exists" |> Logger.notice()
 
-    pp_assignment(clause) <> " || " <> pp_constraints(constraints)
+    {:sat, %Model{assignments: clause, constraints: constraints}}
   end
 
   defp as_assignment({:incomplete, clause, constraints}) do
     "Result unknown due to prover incompleteness" |> Logger.notice()
 
-    {:unknown, pp_assignment(clause) <> " || " <> pp_constraints(constraints)}
+    {:unknown, %Model{assignments: clause, constraints: constraints}, :incomplete}
   end
+
+  defp as_assignment(:timeout), do: {:unknown, nil, :timeout}
 end

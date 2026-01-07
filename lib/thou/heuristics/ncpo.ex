@@ -42,7 +42,13 @@ defmodule THOU.Heuristics.NCPO do
   # MAIN NCPO
   #############################################################################
 
-  @spec ncpo(HOL.Data.hol_term(), HOL.Data.hol_term(), boolean(), boolean(), MapSet.t()) ::
+  @spec ncpo(
+          HOL.Data.hol_term(),
+          HOL.Data.hol_term(),
+          boolean(),
+          boolean(),
+          MapSet.t(HOL.Data.hol_term())
+        ) ::
           boolean()
   defp ncpo(t, t, _, _, _), do: false
 

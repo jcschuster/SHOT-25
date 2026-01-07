@@ -1,4 +1,5 @@
 defmodule THOU.Runner do
+  import THOU.PrettyPrint, only: [pp_proof_result: 1]
   alias THOU.Parser.TPTP
   alias THOU.Prover
 
@@ -34,7 +35,7 @@ defmodule THOU.Runner do
         IO.puts("--------------------------------------------------")
 
         result = Prover.prove(conjecture_term, assumptions, definitions)
-        print_result(result)
+        pp_proof_result(result) |> IO.puts()
 
       nil ->
         # Fallback: If there is no conjecture, check if the axioms are satisfiable
@@ -42,18 +43,9 @@ defmodule THOU.Runner do
         result = Prover.sat(assumptions, definitions)
 
         case result do
-          :unsat -> IO.puts("Result: Unsatisfiable (Axioms contain a contradiction)")
+          {:unsat, :closed} -> IO.puts("Result: Unsatisfiable (Axioms contain a contradiction)")
           _ -> IO.puts("Result: Satisfiable (Axioms are consistent)")
         end
     end
   end
-
-  defp print_result(:valid), do: IO.puts("STATUS: Theorem (Proof Found)")
-
-  defp print_result({:countersat, countermodel}) do
-    IO.puts("STATUS: CounterSatisfiable (Counter-model found)")
-    IO.puts(countermodel)
-  end
-
-  defp print_result({:unknown, _}), do: IO.puts("STATUS: Unknown (Timeout or incomplete)")
 end

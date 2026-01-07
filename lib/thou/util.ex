@@ -5,20 +5,8 @@ defmodule THOU.Util do
   import THOU.HOL.Definitions
   import THOU.HOL.Patterns
 
-  def mk_new_unknown_type() do
-    mk_type(:"__unknown_#{System.unique_integer([:positive, :monotonic])}")
-  end
-
-  def unknown_type?(t) when is_atom(t) do
-    String.starts_with?(Atom.to_string(t), "__unknown_")
-  end
-
-  def unknown_type?(type(goal: g)) do
-    is_atom(g) and unknown_type?(g)
-  end
-
-  def unknown_type?(_), do: false
-
+  @spec mk_new_skolem_term([HOL.Data.declaration()], HOL.Data.type()) ::
+          HOL.Data.hol_term()
   def mk_new_skolem_term(fvars, type() = return_type) do
     skolem_const =
       mk_const(
@@ -33,7 +21,8 @@ defmodule THOU.Util do
     end)
   end
 
-  def constant?(hol_term() = term) do
+  @spec constant?(HOL.Data.hol_term()) :: boolean()
+  def constant?(term) do
     case term do
       negated(body) ->
         constant?(body)
@@ -46,7 +35,8 @@ defmodule THOU.Util do
     end
   end
 
-  def variable?(hol_term() = term) do
+  @spec variable?(HOL.Data.hol_term()) :: boolean()
+  def variable?(term) do
     case term do
       negated(body) ->
         variable?(body)
@@ -59,26 +49,32 @@ defmodule THOU.Util do
     end
   end
 
-  def atomic_term?(hol_term(bvars: [], args: args)), do: args == []
-
-  def atomic_term?(hol_term(bvars: bvars, args: args)) do
-    Enum.all?(args, fn arg -> atomic_term?(arg) && Enum.any?(bvars, &(&1 == get_head(arg))) end)
+  @spec unknown_type?(HOL.Data.type() | atom()) :: boolean()
+  def unknown_type?(t) when is_atom(t) do
+    String.starts_with?(Atom.to_string(t), "__unknown_")
   end
 
-  def is_appl_term?(hol_term(bvars: bvars, args: args)) do
-    # All arguments are atomic terms,
-    # all bound variables appear exactly once as term in argument list
-    # and there is at least one argument that is not a bound variable
-    Enum.all?(args, &atomic_term?/1) &&
-      Enum.all?(bvars, fn bvar -> Enum.any?(args, &match?(hol_term(head: ^bvar), &1)) end) &&
-      Enum.any?(args, fn arg -> !Enum.any?(bvars, &match?(hol_term(head: &1), arg)) end)
+  def unknown_type?(type(goal: g)) do
+    is_atom(g) and unknown_type?(g)
   end
+
+  def unknown_type?(_), do: false
+
+  @spec syn_negate([HOL.Data.hol_term()] | MapSet.t(HOL.Data.hol_term())) ::
+          [HOL.Data.hol_term()]
+  @spec syn_negate(HOL.Data.hol_term()) :: HOL.Data.hol_term()
+  def syn_negate(term_or_collection)
 
   def syn_negate(clause) when is_map(clause) or is_list(clause) do
     Enum.map(clause, fn t -> syn_negate(t) end)
   end
 
   def syn_negate(hol_term(bvars: [], type: type_o()) = term), do: mk_appl_term(neg_term(), term)
+
+  @spec sem_negate([HOL.Data.hol_term()] | MapSet.t(HOL.Data.hol_term())) ::
+          [HOL.Data.hol_term()]
+  @spec sem_negate(HOL.Data.hol_term()) :: HOL.Data.hol_term()
+  def sem_negate(term_or_collection)
 
   def sem_negate(clause) when is_map(clause) or is_list(clause) do
     Enum.map(clause, fn t -> sem_negate(t) end)
@@ -87,6 +83,12 @@ defmodule THOU.Util do
   def sem_negate(hol_term(bvars: [], head: neg_const(), args: [term])), do: term
 
   def sem_negate(hol_term(bvars: [], type: type_o()) = term), do: mk_appl_term(neg_term(), term)
+
+  @spec apply_subst([HOL.Data.substitution()], HOL.Data.hol_term()) :: HOL.Data.hol_term()
+  @spec apply_subst([HOL.Data.substitution()], [HOL.Data.hol_term()]) :: [HOL.Data.hol_term()]
+  @spec apply_subst([HOL.Data.substitution()], MapSet.t(HOL.Data.hol_term())) ::
+          MapSet.t(HOL.Data.hol_term())
+  def apply_subst(substitutions, term_or_collection)
 
   def apply_subst([], x), do: x
 
@@ -108,37 +110,5 @@ defmodule THOU.Util do
 
   def apply_subst(substitutions, substitution(fvar: fvar, term: term)) do
     mk_substitution(fvar, apply_subst(substitutions, term))
-  end
-
-  def flex_flex?({
-        hol_term(bvars: [], head: declaration(kind: :fv), type: type),
-        hol_term(bvars: [], head: declaration(kind: :fv), type: type)
-      }) do
-    true
-  end
-
-  def flex_flex?({hol_term(type: type), hol_term(type: type)}) do
-    false
-  end
-
-  def pp_assignment(clause) when is_map(clause) do
-    pretty_assignments =
-      Enum.map(clause, fn t ->
-        case t do
-          negated(inner) -> "#{PrettyPrint.pp_term(inner)} ← false"
-          _ -> "#{PrettyPrint.pp_term(t)} ← true"
-        end
-      end)
-
-    "[" <> Enum.join(pretty_assignments, ", ") <> "]"
-  end
-
-  def pp_constraints(constraints) when is_list(constraints) do
-    pretty_constraints =
-      Enum.map(constraints, fn {t1, t2} ->
-        "#{PrettyPrint.pp_term(t1)} = #{PrettyPrint.pp_term(t2)}"
-      end)
-
-    "[" <> Enum.join(pretty_constraints, ", ") <> "]"
   end
 end
