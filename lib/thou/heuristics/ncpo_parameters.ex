@@ -1,4 +1,14 @@
 defmodule THOU.Heuristics.NCPOParameters do
+  @moduledoc """
+  Contains the hard-coded parameters of NCPO which include an ordering on base
+  types, a general type-ordering, a precedence map for constants and the status
+  (lexicographic or multiset) of constants.
+
+  To use NCPO as a termination order, these parameter would need via
+  SAT-Solving by encoding the conditions (well-foundedness etc.) of the
+  parameters.
+  """
+
   import HOL.Data
   import THOU.HOL.Definitions
 
@@ -45,10 +55,10 @@ defmodule THOU.Heuristics.NCPOParameters do
         2
 
       _ ->
-        if not String.starts_with?("__unknown_", Atom.to_string(s)) do
-          3
-        else
+        if String.starts_with?("__unknown_", Atom.to_string(s)) do
           4
+        else
+          3
         end
     end
   end
@@ -63,10 +73,10 @@ defmodule THOU.Heuristics.NCPOParameters do
 
   def type_gt?(t, u) do
     cond do
-      is_subtype_or_eq?(u, get_args_safe(t)) ->
+      subtype_or_eq?(u, get_args_safe(t)) ->
         true
 
-      is_right_subterm?(t, u) ->
+      right_subterm?(t, u) ->
         true
 
       base_type_precedence(get_goal_safe(t)) > base_type_precedence(get_goal_safe(u)) ->
@@ -86,20 +96,20 @@ defmodule THOU.Heuristics.NCPOParameters do
   defp get_goal_safe(type(goal: g)), do: g
   defp get_goal_safe(atom) when is_atom(atom), do: atom
 
-  defp is_right_subterm?(type(goal: g, args: [_ | t_rest]), type(goal: g, args: u_args)) do
+  defp right_subterm?(type(goal: g, args: [_ | t_rest]), type(goal: g, args: u_args)) do
     if t_rest == u_args do
       true
     else
-      is_right_subterm?(type(goal: g, args: t_rest), type(goal: g, args: u_args))
+      right_subterm?(type(goal: g, args: t_rest), type(goal: g, args: u_args))
     end
   end
 
-  defp is_right_subterm?(_, _), do: false
+  defp right_subterm?(_, _), do: false
 
-  defp is_subtype_or_eq?(_, []), do: false
+  defp subtype_or_eq?(_, []), do: false
 
-  defp is_subtype_or_eq?(u, [arg | rest]) do
-    arg == u || type_gt?(arg, u) || is_subtype_or_eq?(u, rest)
+  defp subtype_or_eq?(u, [arg | rest]) do
+    arg == u || type_gt?(arg, u) || subtype_or_eq?(u, rest)
   end
 
   defp lexicographic_gt?([], []), do: false

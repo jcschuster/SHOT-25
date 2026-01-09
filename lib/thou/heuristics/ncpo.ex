@@ -1,13 +1,35 @@
 defmodule THOU.Heuristics.NCPO do
+  @moduledoc """
+  Implements NCPO-LNF as introduced in
+  https://www.imn.htwk-leipzig.de/WST2025/proceedings/WST2025_paper_6.pdf,
+  which is an adaption of NCPO (https://arxiv.org/abs/2505.20121) for
+  beta-eta-long normal form.
+
+  NCPO is a termination order for non-versatile terms, i.e. terms, that are
+  stable under substitution (e.g., applied function symbols but not applied
+  free variables). To get around that condition, free variables can be
+  universally quantified before given to the order.
+  """
+
   import HOL.Data
   import HOL.Terms
   import THOU.Heuristics.{TypePositions, NCPOParameters}
   import THOU.HOL.Definitions
 
+  # The use of MapSet generates weird opaqueness warnings which we can ignore
+  @dialyzer {
+    :no_opaque,
+    ncpo: 5, ncpo_weak: 5, bawo: 4, structurally_smaller?: 3, lex_gt_helper: 7
+  }
+
   #############################################################################
   # ENTRY POINT
   #############################################################################
 
+  @doc """
+  Checks if every term from the first argument is dominated by some term from
+  the second argument. Uses the `greater?/2` function to check that condition.
+  """
   @spec smaller_multiset?([HOL.Data.hol_term()], [HOL.Data.hol_term()]) :: boolean()
   def smaller_multiset?(terms_s, terms_t) do
     diff_s = terms_s -- terms_t
@@ -22,6 +44,11 @@ defmodule THOU.Heuristics.NCPO do
     end
   end
 
+  @doc """
+  Checks if the first term is dominated by the second term in terms of `ncpo/5`
+  with initial parameters. Free variables are universally quantified before
+  given to the order to satisfy the non-versatility condition.
+  """
   @spec greater?(HOL.Data.hol_term(), HOL.Data.hol_term()) :: boolean()
   def greater?(s, t) do
     s_nv = quantify_fvars(s)
@@ -30,6 +57,11 @@ defmodule THOU.Heuristics.NCPO do
     ncpo(s_nv, t_nv, true, false, MapSet.new())
   end
 
+  @doc """
+  Weak version of `greater?/2`, where equal terms are permitted. Equality here
+  is given by the term structure modulo α-renaming which is implicitly handled
+  by the use of deBrujn-indices in the `HOL` library.
+  """
   @spec greater_eq?(HOL.Data.hol_term(), HOL.Data.hol_term()) :: boolean()
   def greater_eq?(s, t) do
     s_nv = quantify_fvars(s)
@@ -80,7 +112,7 @@ defmodule THOU.Heuristics.NCPO do
             case t do
               # FX and Fλ cases
               hol_term(bvars: [declaration(type: type) | _]) ->
-                if is_eta_expanded_var?(t) do
+                if eta_expanded_var?(t) do
                   MapSet.member?(vars, t)
                 else
                   var = mk_uniqe_var(type) |> mk_term()
@@ -263,7 +295,7 @@ defmodule THOU.Heuristics.NCPO do
   defp get_goal_type_recursive(type(goal: g)) when is_atom(g), do: type(goal: g, args: [])
   defp get_goal_type_recursive(type(goal: g)), do: get_goal_type_recursive(g)
 
-  defp is_eta_expanded_var?(hol_term(bvars: bvs, head: declaration(kind: :fv), args: args)) do
+  defp eta_expanded_var?(hol_term(bvars: bvs, head: declaration(kind: :fv), args: args)) do
     # All bound variables have a corresponding argument and vice versa
     Enum.all?(bvs, fn bv ->
       Enum.any?(args, &match?(hol_term(head: ^bv), &1))
@@ -273,7 +305,7 @@ defmodule THOU.Heuristics.NCPO do
       end)
   end
 
-  defp is_eta_expanded_var?(_), do: false
+  defp eta_expanded_var?(_), do: false
 
   defp peel_binder(hol_term(bvars: [declaration(type: type) | _]) = term) do
     var_term = mk_uniqe_var(type) |> mk_term()

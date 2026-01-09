@@ -1,4 +1,9 @@
 defmodule THOU.Preprocessing.Serialization do
+  @moduledoc """
+  Contains functionality to serialize and deserialize terms into and from
+  s-expressions to be used in the rewriting process.
+  """
+
   import HOL.{Data, Terms}
   import THOU.HOL.{Patterns, Definitions}
   alias THOU.Preprocessing.SExprTokenizer, as: Tokenizer
@@ -7,66 +12,75 @@ defmodule THOU.Preprocessing.Serialization do
   # TERM -> S-EXPRESSION
   #############################################################################
 
-  def to_s_expr(type() = t), do: type_to_s_expr(t)
+  @doc """
+  Converts a given term to a string representation as s-expression in a way
+  that is reconstructible by `from_s_expr/1`.
 
-  def to_s_expr(declaration(kind: :co, name: n, type: t)) do
-    "#{n}∷#{to_s_expr(t)}"
-  end
+  ## Example:
 
-  def to_s_expr(declaration(name: n, type: t)) do
-    "$VAR~#{encode_var_name(n)}∷#{to_s_expr(t)}"
-  end
+      iex> HOL.Terms.mk_const_term("p", mk_type(:o, [mk_type(:i)])) |> to_s_expr()
+      "(^ $VAR~1∷i (@ p∷i⇾o $VAR~1∷i))"
+  """
+  @spec to_s_expr(HOL.Data.hol_term()) :: String.t()
+  def to_s_expr(term)
 
   def to_s_expr(hol_term(bvars: [b | bs]) = t) do
-    "(^ #{to_s_expr(b)} #{to_s_expr(hol_term(t, bvars: bs))})"
+    "(^ #{serialize_decl(b)} #{to_s_expr(hol_term(t, bvars: bs))})"
   end
 
-  def to_s_expr(hol_term(head: h, args: [])), do: to_s_expr(h)
+  def to_s_expr(hol_term(head: h, args: [])), do: serialize_decl(h)
 
   def to_s_expr(equality(a, b)), do: "(= #{to_s_expr(a)} #{to_s_expr(b)})"
 
   def to_s_expr(hol_term(head: declaration(kind: :co, name: name) = h, args: args))
       when name in ["¬", "∨", "∧", "⊃", "≡"] do
-    args_str =
-      Enum.map(args, &to_s_expr/1)
-      |> Enum.join(" ")
+    args_str = Enum.map_join(args, " ", &to_s_expr/1)
 
-    "(#{to_s_expr(h)} #{args_str})"
+    "(#{serialize_decl(h)} #{args_str})"
   end
 
   def to_s_expr(hol_term(head: h, args: args)) do
-    Enum.reduce(args, to_s_expr(h), &"(@ #{&2} #{to_s_expr(&1)})")
+    Enum.reduce(args, serialize_decl(h), &"(@ #{&2} #{to_s_expr(&1)})")
+  end
+
+  defp serialize_decl(declaration(kind: :co, name: n, type: t)) do
+    "#{n}∷#{serialize_type(t)}"
+  end
+
+  defp serialize_decl(declaration(name: n, type: t)) do
+    "$VAR~#{encode_var_name(n)}∷#{serialize_type(t)}"
   end
 
   defp encode_var_name(n) when is_binary(n), do: n
   defp encode_var_name(n) when is_integer(n), do: Integer.to_string(n)
   defp encode_var_name(n), do: "HEX:" <> Base.encode16(:erlang.term_to_binary(n))
 
-  defp type_to_s_expr(type(goal: g, args: [])), do: Atom.to_string(g)
+  defp serialize_type(type(goal: g, args: [])), do: Atom.to_string(g)
 
-  defp type_to_s_expr(type(goal: g, args: args)) do
-    args_str =
-      Enum.map(args, &type_to_s_expr_inner/1)
-      |> Enum.join("⇾")
+  defp serialize_type(type(goal: g, args: args)) do
+    args_str = Enum.map_join(args, "⇾", &serialize_type_inner/1)
 
-    "#{args_str}⇾#{type_to_s_expr_inner(g)}"
+    "#{args_str}⇾#{serialize_type_inner(g)}"
   end
 
-  defp type_to_s_expr_inner(a) when is_atom(a), do: Atom.to_string(a)
-  defp type_to_s_expr_inner(type(goal: g, args: [])), do: Atom.to_string(g)
+  defp serialize_type_inner(a) when is_atom(a), do: Atom.to_string(a)
+  defp serialize_type_inner(type(goal: g, args: [])), do: Atom.to_string(g)
 
-  defp type_to_s_expr_inner(type(goal: g, args: args)) do
-    args_str =
-      Enum.map(args, &type_to_s_expr_inner/1)
-      |> Enum.join("⇾")
+  defp serialize_type_inner(type(goal: g, args: args)) do
+    args_str = Enum.map_join(args, "⇾", &serialize_type_inner/1)
 
-    "[#{args_str}⇾#{type_to_s_expr_inner(g)}]"
+    "[#{args_str}⇾#{serialize_type_inner(g)}]"
   end
 
   #############################################################################
   # S-EXPRESSION -> TERM
   #############################################################################
 
+  @doc """
+  Deserializes a s-expression to its corresponding representation as
+  `HOL.Data.hol_term()`.
+  """
+  @spec from_s_expr(String.t()) :: HOL.Data.hol_term()
   def from_s_expr(str) do
     {:ok, tokens, "", _, _, _} = Tokenizer.tokenize(str)
     {term, []} = tokens_to_term(tokens)

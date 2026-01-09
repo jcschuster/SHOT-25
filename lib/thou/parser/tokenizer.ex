@@ -1,4 +1,17 @@
 defmodule THOU.Parser.TPTPTokenizer do
+  @moduledoc """
+  Contains a `tokenize/1` function for tokenizing a string representing a
+  formula in TH0 syntax or a TPTP TH0 problem file using `NimbleParsec`. This
+  is mainly used as a preprocessing step for parsing. For information about the
+  returned structure, see https://hexdocs.pm/nimble_parsec/NimbleParsec.html.
+
+  ## Examples
+
+      iex> {:ok, tokens, "", _, _, _} = tokenize("A & B")
+      iex> tokens
+      [var: "A", and: "&", var: "B"]
+  """
+
   import NimbleParsec
 
   whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 1) |> ignore()

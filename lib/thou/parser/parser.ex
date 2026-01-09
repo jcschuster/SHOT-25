@@ -1,52 +1,146 @@
 defmodule THOU.Parser.Parser do
+  @moduledoc """
+  Contains functionality to parse a formula in TH0 syntax with full type
+  inference (documented in `THOU.Parser.TypeInference`). A context can be
+  specified to clear up unknown types. Main Entry point is the `parse/2`
+  function.
+  """
+
   import HOL.Data
   import HOL.Terms
   import THOU.HOL.Definitions
   alias THOU.Parser.TPTPTokenizer, as: Tokenizer
-  alias THOU.Parser.TypeInference
+  alias THOU.Parser.TypeInference, as: TI
 
-  # Context struct to track variable types and declared constants
+  @dialyzer {:no_opaque, parse: 1, parse_tokens: 1}
+
   defmodule Context do
+    @moduledoc """
+    A data structure to declare and track variable types and declared
+    constants. Also contains type constraints needed for parsing.
+
+    ## Examples
+
+        iex> Context.new()
+        %THOU.Parser.Parser.Context{vars: %{}, consts: %{}, constraints: MapSet.new([])}
+
+        iex> Context.new() |> Context.put_var("X", HOL.Data.mk_type(:o))
+        %THOU.Parser.Parser.Context{
+          vars: %{"X" => {:type, :o, []}},
+          consts: %{},
+          constraints: MapSet.new([])
+        }
+    """
+
+    @dialyzer {:no_opaque, new: 0}
+
     defstruct vars: %{}, consts: %{}, constraints: MapSet.new()
 
+    @typedoc """
+    The type of the context.
+
+    A context contains the type of variables (`:vars`) as a `Map` from its name
+    to its type. Likewise for the constants (`:consts`). The type constraints
+    are represented as a `MapSet` of `HOL.Data.type()` pairs.
+    """
+    @type t() :: %__MODULE__{
+            vars: %{String.t() => HOL.Data.type()},
+            consts: %{String.t() => HOL.Data.type()},
+            constraints: MapSet.t({HOL.Data.type(), HOL.Data.type()})
+          }
+
+    @doc """
+    Creates an empty context.
+    """
+    @spec new() :: t()
     def new, do: %Context{}
 
+    @doc """
+    Associates the variable with the given name with the given type in the
+    context.
+    """
+    @spec put_var(t(), String.t(), HOL.Data.type()) :: t()
     def put_var(ctx, name, type) do
       %{ctx | vars: Map.put(ctx.vars, name, type)}
     end
 
-    def get_type(ctx, name) do
-      Map.get(ctx.vars, name) || Map.get(ctx.consts, name)
-    end
-
+    @doc """
+    Associates the constant with the given name with the given type in the
+    context.
+    """
     def put_const(ctx, name, type) do
       %{ctx | consts: Map.put(ctx.consts, name, type)}
     end
 
+    @doc """
+    Adds a type constraint to the context.
+    """
+    @spec add_constraint(t(), HOL.Data.type(), HOL.Data.type()) :: t()
     def add_constraint(ctx, t1, t2) do
       %{ctx | constraints: MapSet.put(ctx.constraints, {t1, t2})}
+    end
+
+    @doc """
+    Returns the type of the given name of a constant or variable. Returns `nil`
+    if the name is not present in the context.
+    """
+    @spec get_type(t(), String.t()) :: HOL.Data.type() | nil
+    def get_type(ctx, name) do
+      Map.get(ctx.vars, name) || Map.get(ctx.consts, name)
     end
   end
 
   # --- Entry Point ---
 
+  @doc """
+  Parses a given string representing a formula in TH0 syntax to a
+  `HOL.Data.hol_term()` with respect to the given context. Types are inferred
+  if they are not present in the given context. Types that can't be inferred
+  will be handled as unknown types which are constructed by
+  `THOU.Parser.TypeInference.mk_new_unknown_type/0`.
+
+  ## Examples
+
+      iex>parse "$true"
+      {:term, [], {:decl, :co, "⊤", {:type, :o, []}}, [], {:type, :o, []}, [], 0}
+
+      iex>parse "X & Y"
+      {:term, [], {:decl, :co, "∧", {:type, :o, [{:type, :o, []}, {:type, :o, []}]}},
+      [
+        {:term, [], {:decl, :fv, "X", {:type, :o, []}}, [], {:type, :o, []},
+          [{:decl, :fv, "X", {:type, :o, []}}], 0},
+        {:term, [], {:decl, :fv, "Y", {:type, :o, []}}, [], {:type, :o, []},
+          [{:decl, :fv, "Y", {:type, :o, []}}], 0}
+      ], {:type, :o, []}, [{:decl, :fv, "Y", {:type, :o, []}}, {:decl, :fv, "X", {:type, :o, []}}], 0}
+  """
+  @spec parse(String.t(), Context.t()) :: HOL.Data.hol_term()
   def parse(formula_str, context \\ Context.new()) do
     {:ok, tokens, "", _, _, _} = Tokenizer.tokenize(formula_str)
     parse_tokens(tokens, context)
   end
 
+  @doc """
+  Parses a given list of tokens tokenized by
+  `THOU.Parser.TPTPTokenizer.tokenize/1` representing a formula in TH0 syntax
+  to a `HOL.Data.hol_term()` with respect to the given context. Types are
+  inferred if they are not present in the given context. Types that can't be
+  inferred will be handled as unknown types which are constructed by
+  `THOU.Parser.TypeInference.mk_new_unknown_type/0`.
+  """
+  @spec parse_tokens([{atom(), String.t()}], Context.t()) :: HOL.Data.hol_term()
   def parse_tokens(tokens, context \\ Context.new()) do
     {pre_term, [], almost_final_ctx} = parse_formula(tokens, context)
     root_type = get_pre_type(pre_term)
 
     final_ctx =
-      if unknown_type?(root_type) do
+      if TI.unknown_type?(root_type) do
+        IO.puts("Type #{root_type} is unknown")
         Context.add_constraint(almost_final_ctx, root_type, type_o())
       else
         almost_final_ctx
       end
 
-    substitutions = TypeInference.solve(final_ctx.constraints)
+    substitutions = TI.solve(final_ctx.constraints)
     build_term(pre_term, substitutions)
   end
 
@@ -57,17 +151,18 @@ defmodule THOU.Parser.Parser do
   end
 
   defp build_term({:pre_abs, name, var_type, body, _type}, subst) do
-    concrete_var_type = TypeInference.apply_subst(var_type, subst)
+    concrete_var_type = TI.apply_subst(var_type, subst)
     var = mk_free_var(name, concrete_var_type)
     mk_abstr_term(build_term(body, subst), var)
   end
 
   defp build_term({:pre_var, name, type}, subst) do
-    mk_term(mk_free_var(name, TypeInference.apply_subst(type, subst)))
+    mk_term(mk_free_var(name, TI.apply_subst(type, subst)))
   end
 
   defp build_term({:pre_const, "!=", type}, subst) do
-    not_equals_term(TypeInference.apply_subst(type, subst))
+    type(args: [alpha, alpha]) = TI.apply_subst(type, subst)
+    not_equals_term(alpha)
   end
 
   defp build_term({:pre_const, "<~>", _}, _), do: xor_term()
@@ -76,7 +171,7 @@ defmodule THOU.Parser.Parser do
   defp build_term({:pre_const, "~&", _}, _), do: nand_term()
 
   defp build_term({:pre_const, name, type}, subst) do
-    mk_term(mk_const(name, TypeInference.apply_subst(type, subst)))
+    mk_term(mk_const(name, TI.apply_subst(type, subst)))
   end
 
   # --- Parsing Logic ---
@@ -208,6 +303,9 @@ defmodule THOU.Parser.Parser do
   defp parse_unitary([{:not, _} | [{:rparen, _} | _]] = tokens, ctx),
     do: parse_equality(tokens, ctx)
 
+  defp parse_unitary([{:not, _} | []] = tokens, ctx),
+    do: parse_equality(tokens, ctx)
+
   defp parse_unitary([{:not, _} | rest], ctx) do
     {term, rest2, ctx2} = parse_unitary(rest, ctx)
     ctx3 = constrain(ctx2, term, type_o())
@@ -277,7 +375,7 @@ defmodule THOU.Parser.Parser do
 
     t_f = get_pre_type(lhs)
     t_x = get_pre_type(rhs)
-    t_ret = mk_new_unknown_type()
+    t_ret = TI.mk_new_unknown_type()
 
     arrow_type = mk_type(t_ret, [t_x])
     ctx3 = Context.add_constraint(ctx2, t_f, arrow_type)
@@ -337,7 +435,7 @@ defmodule THOU.Parser.Parser do
     case rest_after_lambda do
       [{:rparen, _} | final_tokens] ->
         abs_type = get_pre_type(abs_term)
-        domain_type = mk_new_unknown_type()
+        domain_type = TI.mk_new_unknown_type()
         expected_pred_type = mk_type(:o, [domain_type])
 
         final_ctx = Context.add_constraint(lambda_ctx, abs_type, expected_pred_type)
@@ -365,7 +463,7 @@ defmodule THOU.Parser.Parser do
     {term, rest2, ctx2} = parse_unitary(rest, ctx)
 
     term_type = get_pre_type(term)
-    alpha = mk_new_unknown_type()
+    alpha = TI.mk_new_unknown_type()
     expected_pred_type = mk_type(:o, [alpha])
 
     ctx3 = Context.add_constraint(ctx2, term_type, expected_pred_type)
@@ -412,11 +510,11 @@ defmodule THOU.Parser.Parser do
   defp parse_typed_vars_with_inference(tokens, acc \\ []) do
     case tokens do
       [{:var, name}, {:comma, _} | rest] ->
-        t = mk_new_unknown_type()
+        t = TI.mk_new_unknown_type()
         parse_typed_vars_with_inference(rest, acc ++ [{name, t}])
 
       [{:var, name}, {:rbracket, _} = rb | rest] ->
-        t = mk_new_unknown_type()
+        t = TI.mk_new_unknown_type()
         {acc ++ [{name, t}], [rb | rest]}
 
       [{:var, name}, {:colon, _} | rest] ->
@@ -466,7 +564,7 @@ defmodule THOU.Parser.Parser do
   defp parse_atomic([{:var, name} | rest], ctx) do
     case Context.get_type(ctx, name) do
       nil ->
-        new_type = mk_new_unknown_type()
+        new_type = TI.mk_new_unknown_type()
         ctx2 = Context.put_var(ctx, name, new_type)
         {{:pre_var, name, new_type}, rest, ctx2}
 
@@ -478,7 +576,7 @@ defmodule THOU.Parser.Parser do
   defp parse_atomic([{:atom, name} | rest], ctx) do
     case Context.get_type(ctx, name) do
       nil ->
-        new_type = mk_new_unknown_type()
+        new_type = TI.mk_new_unknown_type()
         ctx2 = Context.put_const(ctx, name, new_type)
         {{:pre_const, name, new_type}, rest, ctx2}
 
@@ -496,13 +594,13 @@ defmodule THOU.Parser.Parser do
   end
 
   defp parse_atomic([{:eq, _} | rest], ctx) do
-    alpha = mk_new_unknown_type()
+    alpha = TI.mk_new_unknown_type()
     type = mk_type(:o, [alpha, alpha])
     {{:pre_const, "=", type}, rest, ctx}
   end
 
   defp parse_atomic([{:neq, _} | rest], ctx) do
-    alpha = mk_new_unknown_type()
+    alpha = TI.mk_new_unknown_type()
     type = mk_type(:o, [alpha, alpha])
     {{:pre_const, "!=", type}, rest, ctx}
   end
@@ -544,28 +642,28 @@ defmodule THOU.Parser.Parser do
     do: parse_quantifier(:sigma, rest, ctx)
 
   defp parse_atomic([{:pi, _} | rest], ctx) do
-    alpha = mk_new_unknown_type()
+    alpha = TI.mk_new_unknown_type()
     pred_type = mk_type(:o, [alpha])
     type = mk_type(:o, [pred_type])
     {{:pre_const, "Π", type}, rest, ctx}
   end
 
   defp parse_atomic([{:forall, _} | rest], ctx) do
-    alpha = mk_new_unknown_type()
+    alpha = TI.mk_new_unknown_type()
     pred_type = mk_type(:o, [alpha])
     type = mk_type(:o, [pred_type])
     {{:pre_const, "Π", type}, rest, ctx}
   end
 
   defp parse_atomic([{:sigma, _} | rest], ctx) do
-    alpha = mk_new_unknown_type()
+    alpha = TI.mk_new_unknown_type()
     pred_type = mk_type(:o, [alpha])
     type = mk_type(:o, [pred_type])
     {{:pre_const, "Σ", type}, rest, ctx}
   end
 
   defp parse_atomic([{:exists, _} | rest], ctx) do
-    alpha = mk_new_unknown_type()
+    alpha = TI.mk_new_unknown_type()
     pred_type = mk_type(:o, [alpha])
     type = mk_type(:o, [pred_type])
     {{:pre_const, "Σ", type}, rest, ctx}
@@ -596,19 +694,4 @@ defmodule THOU.Parser.Parser do
   defp parse_atomic([], _ctx) do
     raise "Syntax Error: Unexpected end of input."
   end
-
-  defp mk_new_unknown_type() do
-    mk_type(:"__unknown_#{System.unique_integer([:positive, :monotonic])}")
-  end
-
-  @spec unknown_type?(HOL.Data.type() | atom()) :: boolean()
-  defp unknown_type?(t) when is_atom(t) do
-    String.starts_with?(Atom.to_string(t), "__unknown_")
-  end
-
-  defp unknown_type?(type(goal: g)) do
-    is_atom(g) and unknown_type?(g)
-  end
-
-  defp unknown_type?(_), do: false
 end

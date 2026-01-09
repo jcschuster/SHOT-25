@@ -1,13 +1,28 @@
 defmodule THOU.Util do
+  @moduledoc """
+  Contains utility functions used by the prover. This includes the generation
+  of skolem terms, utility to negate and to apply substitutions to terms.
+  """
+
   import HOL.Data
   import HOL.Terms
   import HOL.Substitution
   import THOU.HOL.Definitions
-  import THOU.HOL.Patterns
 
-  @spec mk_new_skolem_term([HOL.Data.declaration()], HOL.Data.type()) ::
+  @typedoc """
+  Type for a term or a collection of terms.
+  """
+  @type term_or_collection ::
           HOL.Data.hol_term()
-  def mk_new_skolem_term(fvars, type() = return_type) do
+          | [HOL.Data.hol_term()]
+          | MapSet.t(HOL.Data.hol_term())
+
+  @doc """
+  Creates a new and unique skolem term which is of type `return_type` and
+  dependent on `fvars`.
+  """
+  @spec mk_new_skolem_term([HOL.Data.declaration()], HOL.Data.type()) :: HOL.Data.hol_term()
+  def mk_new_skolem_term(fvars, return_type) do
     skolem_const =
       mk_const(
         "__sk_#{System.unique_integer([:positive, :monotonic])}",
@@ -21,60 +36,29 @@ defmodule THOU.Util do
     end)
   end
 
-  @spec constant?(HOL.Data.hol_term()) :: boolean()
-  def constant?(term) do
-    case term do
-      negated(body) ->
-        constant?(body)
-
-      hol_term(bvars: bvars, head: declaration(kind: :co), args: args) ->
-        Enum.all?(args, &(get_head(&1) in bvars))
-
-      _ ->
-        false
-    end
-  end
-
-  @spec variable?(HOL.Data.hol_term()) :: boolean()
-  def variable?(term) do
-    case term do
-      negated(body) ->
-        variable?(body)
-
-      hol_term(bvars: bvars, head: declaration(kind: :fv), args: args) ->
-        Enum.all?(args, &(get_head(&1) in bvars))
-
-      _ ->
-        false
-    end
-  end
-
-  @spec unknown_type?(HOL.Data.type() | atom()) :: boolean()
-  def unknown_type?(t) when is_atom(t) do
-    String.starts_with?(Atom.to_string(t), "__unknown_")
-  end
-
-  def unknown_type?(type(goal: g)) do
-    is_atom(g) and unknown_type?(g)
-  end
-
-  def unknown_type?(_), do: false
-
-  @spec syn_negate([HOL.Data.hol_term()] | MapSet.t(HOL.Data.hol_term())) ::
-          [HOL.Data.hol_term()]
-  @spec syn_negate(HOL.Data.hol_term()) :: HOL.Data.hol_term()
+  @doc """
+  Negates the given term or every term in the given collection by prefixing it
+  with a negation symbol.
+  """
+  @spec syn_negate(t) :: t when t: term_or_collection()
   def syn_negate(term_or_collection)
 
-  def syn_negate(clause) when is_map(clause) or is_list(clause) do
+  def syn_negate(clause) when is_list(clause) do
     Enum.map(clause, fn t -> syn_negate(t) end)
+  end
+
+  def syn_negate(clause) when is_struct(clause, MapSet) do
+    MapSet.new(clause, fn t -> syn_negate(t) end)
   end
 
   def syn_negate(hol_term(bvars: [], type: type_o()) = term), do: mk_appl_term(neg_term(), term)
 
-  @spec sem_negate([HOL.Data.hol_term()] | MapSet.t(HOL.Data.hol_term())) ::
-          [HOL.Data.hol_term()]
-  @spec sem_negate(HOL.Data.hol_term()) :: HOL.Data.hol_term()
-  def sem_negate(term_or_collection)
+  @doc """
+  Negates the given term or every term in the given collection by prefixing it
+  with a negation symbol and eliminating a possibley introduced double
+  negation.
+  """
+  @spec sem_negate(t) :: t when t: term_or_collection()
 
   def sem_negate(clause) when is_map(clause) or is_list(clause) do
     Enum.map(clause, fn t -> sem_negate(t) end)
@@ -84,10 +68,12 @@ defmodule THOU.Util do
 
   def sem_negate(hol_term(bvars: [], type: type_o()) = term), do: mk_appl_term(neg_term(), term)
 
-  @spec apply_subst([HOL.Data.substitution()], HOL.Data.hol_term()) :: HOL.Data.hol_term()
-  @spec apply_subst([HOL.Data.substitution()], [HOL.Data.hol_term()]) :: [HOL.Data.hol_term()]
-  @spec apply_subst([HOL.Data.substitution()], MapSet.t(HOL.Data.hol_term())) ::
-          MapSet.t(HOL.Data.hol_term())
+  @doc """
+  Applies a list of substitutions to the given term, pair of terms, collection
+  of terms or substitution.
+  """
+  @spec apply_subst([HOL.Data.substitution()], t) :: t
+        when t: term_or_collection() | HOL.Data.substitution()
   def apply_subst(substitutions, term_or_collection)
 
   def apply_subst([], x), do: x
@@ -100,15 +86,11 @@ defmodule THOU.Util do
     MapSet.new(literals, &apply_subst(substitutions, &1))
   end
 
-  def apply_subst(substitutions, hol_term() = term) do
-    subst(substitutions, term)
-  end
-
-  def apply_subst(substitutions, {hol_term() = t1, hol_term() = t2}) do
-    {apply_subst(substitutions, t1), apply_subst(substitutions, t2)}
-  end
-
   def apply_subst(substitutions, substitution(fvar: fvar, term: term)) do
     mk_substitution(fvar, apply_subst(substitutions, term))
+  end
+
+  def apply_subst(substitutions, term) do
+    subst(substitutions, term)
   end
 end

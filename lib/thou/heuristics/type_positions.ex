@@ -1,6 +1,6 @@
 defmodule THOU.Heuristics.TypePositions do
-  # implements type positions as defined in
-  # https://doi.org/10.1016/S0304-3975(97)00143-6
+  @moduledoc false
+
   import HOL.Data
 
   def occurs_only_positively?(sort, type) do

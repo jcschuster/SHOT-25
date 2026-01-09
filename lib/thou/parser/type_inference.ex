@@ -1,12 +1,77 @@
 defmodule THOU.Parser.TypeInference do
-  import HOL.Data
-  import THOU.Util, only: [unknown_type?: 1]
+  @moduledoc """
+  Contains functionality to create and check for unknown types and a type
+  inference engine which works by unifying constraints.
+  """
 
+  import HOL.Data
+
+  @typedoc """
+  Type of a substitution for unknown types.
+
+  A type substitution is a `Map` mapping "__unknown_" type identifiers to types
+  or atoms.
+  """
+  @type substitution() :: %{atom() => HOL.Data.type() | atom()}
+
+  @doc """
+  Creates a new and unique unknown type.
+  """
+  @spec mk_new_unknown_type() :: HOL.Data.type()
+  def mk_new_unknown_type() do
+    mk_type(:"__unknown_#{System.unique_integer([:positive, :monotonic])}")
+  end
+
+  @doc """
+  Checks whether the given atom or type represents an unknown type. An atom is
+  an unknown type if the prefix of its string representation "__unknown_". A
+  type is an unknown type if its goal recursively reduces to an unknown type.
+  """
+  @spec unknown_type?(HOL.Data.type() | atom()) :: boolean()
+  def unknown_type?(type_or_atom)
+
+  def unknown_type?(t) when is_atom(t) do
+    String.starts_with?(Atom.to_string(t), "__unknown_")
+  end
+
+  def unknown_type?(type(goal: g)) do
+    is_atom(g) and unknown_type?(g)
+  end
+
+  def unknown_type?(_), do: false
+
+  @doc """
+  Tries to solve a given list of type constraints by unifying them.
+
+  Employs Robinson's unification algorithm (first-order syntactic unification)
+  to find the most general unifier for the types. The returned substitutions
+  are given as a `Map` mapping "__unknown_" type identifiers to types or atoms.
+
+  ## Examples
+
+      iex> solve([{mk_new_unknown_type(), HOL.Data.mk_type(:i)}])
+      %{__unknown_1: :i}
+
+      iex> solve([{mk_new_unknown_type(), mk_new_unknown_type()}])
+      %{__unknown_1: :__unknown_2}
+
+      iex> t1 = mk_new_unknown_type()
+      iex> t2 = mk_new_unknown_type()
+      iex> solve([{t1, t2}, {t2, HOL.Data.mk_type(:i, [HOL.Data.mk_type(:i)])}])
+      %{__unknown_1: {:type, :i, [{:type, :i, []}]}, __unknown_2: {:type, :i, [{:type, :i, []}]}}
+  """
+  @spec solve([{HOL.Data.type(), HOL.Data.type()}]) :: substitution()
   def solve(constraints) do
     Enum.reduce(constraints, %{}, fn {t1, t2}, subst ->
       unify(apply_subst(t1, subst), apply_subst(t2, subst), subst)
     end)
   end
+
+  @doc """
+  Applies a substitution to a given type or atom.
+  """
+  @spec apply_subst(HOL.Data.type() | atom(), substitution()) :: HOL.Data.type() | atom()
+  def apply_subst(type_or_atom, subst)
 
   def apply_subst(type(goal: g, args: args), subst) do
     resolved_base =
@@ -93,11 +158,7 @@ defmodule THOU.Parser.TypeInference do
         unify_concrete(t1, t2, subst)
 
       length(args1) < length(args2) ->
-        if not unknown_type?(g1) do
-          raise(
-            "Type Error: Cannot unify #{inspect(t1)} with #{inspect(t2)} under substitutions #{inspect(subst)}."
-          )
-        else
+        if unknown_type?(g1) do
           {shared_args2, extra_args2} = Enum.split(args2, length(args1))
 
           subst_after_args =
@@ -112,6 +173,10 @@ defmodule THOU.Parser.TypeInference do
             apply_subst(g1, subst_after_args),
             apply_subst(tail_type, subst_after_args),
             subst_after_args
+          )
+        else
+          raise(
+            "Type Error: Cannot unify #{inspect(t1)} with #{inspect(t2)} under substitutions #{inspect(subst)}."
           )
         end
 

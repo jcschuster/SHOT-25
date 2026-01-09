@@ -1,13 +1,32 @@
 defmodule THOU.Runner do
+  @moduledoc """
+  Extends the functionality of `THOU.Prover` for more general proving of TPTP
+  files and `THOU.Parser.TPTP.Problem` structures. Main entry point for running
+  the prover on files.
+  """
+
   import THOU.PrettyPrint, only: [pp_proof_result: 1]
   alias THOU.Parser.TPTP
   alias THOU.Prover
 
   @doc """
-  Parses a THF file and attempts to prove the conjecture found within it.
+  Parses a TPTP problem file in TH0 syntax, attempts to prove the conjecture
+  found within it and prints the result to stdout. If no conjecture could be
+  found in the given file, tries to satisfy the axioms.
+
+  If a custom file is given, the flag `is_tptp` should be set to `false`. Note
+  that only imports from the TPTP library are supported. In that case, an
+  environment variable `TPTP_ROOT` must be specified which points to the root
+  folder of the TPTP problem library. Note that this may require a system
+  restart for Elixir to register the variable.
+
+  When proving a file from the TPTP problem library, the same environment
+  variable `TPTP_ROOT` needs to be registered. After the variable has been
+  registered, a TPTP problem file can be parsed by specifying the path from the
+  root folder to that problem in `path`.
   """
+  @spec prove_file(String.t(), boolean()) :: no_return()
   def prove_file(path, is_tptp \\ true) do
-    # 1. Parse the file into a Problem struct
     case TPTP.parse_file(path, is_tptp) do
       {:ok, problem} ->
         run_prover(problem)
@@ -17,9 +36,13 @@ defmodule THOU.Runner do
     end
   end
 
+  @doc """
+  Runs the prover on a given problem struct and prints the result to stdout.
+  If no conjecture could be found in the given problem, tries to satisfy the
+  axioms.
+  """
+  @spec run_prover(THOU.Parser.TPTP.Problem.t()) :: no_return()
   def run_prover(problem) do
-    definitions = Map.new(problem.definitions)
-
     assumptions = Enum.map(problem.axioms, fn {_name, term} -> term end)
 
     case problem.conjecture do
@@ -29,18 +52,18 @@ defmodule THOU.Runner do
 
         IO.puts(
           "Loaded #{length(assumptions)} axioms" <>
-            " and #{length(Map.keys(definitions))} definitions."
+            " and #{length(Map.keys(problem.definitions))} definitions."
         )
 
         IO.puts("--------------------------------------------------")
 
-        result = Prover.prove(conjecture_term, assumptions, definitions)
+        result = Prover.prove(conjecture_term, assumptions, problem.definitions)
         pp_proof_result(result) |> IO.puts()
 
       nil ->
         # Fallback: If there is no conjecture, check if the axioms are satisfiable
         IO.puts("No conjecture found. Checking consistency (SAT) of axioms...")
-        result = Prover.sat(assumptions, definitions)
+        result = Prover.sat(assumptions, problem.definitions)
 
         case result do
           {:unsat, :closed} -> IO.puts("Result: Unsatisfiable (Axioms contain a contradiction)")
