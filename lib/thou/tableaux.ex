@@ -21,10 +21,9 @@ defmodule THOU.Tableaux do
   import HOL.Data
   import HOL.Terms
   import HOL.Unification
-  import THOU.HOL.Definitions
-  import THOU.HOL.Patterns
+  import BeHOLd.ClassicalHOL.{Definitions, Patterns}
+  import BeHOLd.Util.TypeInference, only: [unknown_type?: 1]
   import THOU.Util
-  import THOU.Parser.TypeInference, only: [unknown_type?: 1]
   import THOU.PrettyPrint
   alias THOU.Preprocessing.Rewriting
   alias THOU.Heuristics.NCPO

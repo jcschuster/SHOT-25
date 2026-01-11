@@ -5,7 +5,7 @@ defmodule THOU.Preprocessing.Serialization do
   """
 
   import HOL.{Data, Terms}
-  import THOU.HOL.{Patterns, Definitions}
+  import BeHOLd.ClassicalHOL.{Patterns, Definitions}
   alias THOU.Preprocessing.SExprTokenizer, as: Tokenizer
 
   #############################################################################

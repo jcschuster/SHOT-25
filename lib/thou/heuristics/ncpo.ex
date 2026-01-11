@@ -13,8 +13,8 @@ defmodule THOU.Heuristics.NCPO do
 
   import HOL.Data
   import HOL.Terms
+  import BeHOLd.ClassicalHOL.Definitions
   import THOU.Heuristics.{TypePositions, NCPOParameters}
-  import THOU.HOL.Definitions
 
   # The use of MapSet generates weird opaqueness warnings which we can ignore
   @dialyzer {

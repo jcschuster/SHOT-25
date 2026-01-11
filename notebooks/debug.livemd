@@ -34,8 +34,7 @@ Logger.put_application_level(:hol, :error)
 ```
 
 ```elixir
-mk_const_term("p", mk_type(:o, [mk_type(:i)]))
-|> THOU.Preprocessing.Serialization.to_s_expr()
+{:ok, tokens, _, _, _, _} ="$i>$o" |> THOU.Parser.TPTPTokenizer.tokenize
 ```
 
 ## Custom Files

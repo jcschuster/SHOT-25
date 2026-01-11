@@ -7,7 +7,7 @@ defmodule THOU.Util do
   import HOL.Data
   import HOL.Terms
   import HOL.Substitution
-  import THOU.HOL.Definitions
+  import BeHOLd.ClassicalHOL.Definitions
 
   @typedoc """
   Type for a term or a collection of terms.

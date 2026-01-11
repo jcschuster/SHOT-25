@@ -21,7 +21,8 @@ defmodule THOU.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:hol, "1.0.2"},
+      {:hol, "~> 1.0.2"},
+      {:behold, "~> 1.0.0"},
       {:nimble_parsec, "~> 1.4.2"},
       {:rustler, "~> 0.37.1", runtime: false},
       # Code analyzer, code duplication checker and security analyzer

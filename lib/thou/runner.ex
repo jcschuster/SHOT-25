@@ -1,12 +1,12 @@
 defmodule THOU.Runner do
   @moduledoc """
   Extends the functionality of `THOU.Prover` for more general proving of TPTP
-  files and `THOU.Parser.TPTP.Problem` structures. Main entry point for running
-  the prover on files.
+  files and `BeHOLd.TPTP.Problem` structures. Main entry point for running the
+  prover on files.
   """
 
+  alias BeHOLd.TPTP
   import THOU.PrettyPrint, only: [pp_proof_result: 1]
-  alias THOU.Parser.TPTP
   alias THOU.Prover
 
   @doc """
@@ -41,7 +41,7 @@ defmodule THOU.Runner do
   If no conjecture could be found in the given problem, tries to satisfy the
   axioms.
   """
-  @spec run_prover(THOU.Parser.TPTP.Problem.t()) :: no_return()
+  @spec run_prover(BeHOLd.Data.Problem.t()) :: no_return()
   def run_prover(problem) do
     assumptions = Enum.map(problem.axioms, fn {_name, term} -> term end)
 
@@ -51,7 +51,7 @@ defmodule THOU.Runner do
         IO.puts("Proving Conjecture: #{name}")
 
         IO.puts(
-          "Loaded #{length(assumptions)} axioms" <>
+          "Loaded #{length(assumptions)} axioms/hypotheses/lemmata/assumptions" <>
             " and #{length(Map.keys(problem.definitions))} definitions."
         )
 

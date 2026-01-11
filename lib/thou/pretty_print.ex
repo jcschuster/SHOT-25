@@ -5,7 +5,7 @@ defmodule THOU.PrettyPrint do
   constraints and the final result of the prover.
   """
 
-  import THOU.HOL.Patterns, only: [negated: 1]
+  import BeHOLd.ClassicalHOL.Patterns, only: [negated: 1]
 
   @doc """
   Converts a given assignment to literals as `MapSet` containing negated or

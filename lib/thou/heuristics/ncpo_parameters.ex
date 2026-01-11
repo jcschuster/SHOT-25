@@ -10,7 +10,7 @@ defmodule THOU.Heuristics.NCPOParameters do
   """
 
   import HOL.Data
-  import THOU.HOL.Definitions
+  import BeHOLd.ClassicalHOL.Definitions
 
   @type type_or_atom() :: HOL.Data.type() | atom()
   @type base_type_or_atom() :: {:type, atom(), []} | atom()
