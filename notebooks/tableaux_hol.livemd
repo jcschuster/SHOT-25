@@ -1,6 +1,9 @@
 # HOL Tableaux
 
 ```elixir
+System.put_env("HEX_HTTP_CONCURRENCY", "1")
+System.put_env("HEX_HTTP_TIMEOUT", "120")
+
 Mix.install([
   {:hol, "1.0.2"},
   {:thou, path: Path.join(__DIR__, "..")}
@@ -14,9 +17,10 @@ import HOL.Data
 import HOL.Terms
 import HOL.Unification
 import TPTPParser
-
-import THOU.{Util, Prover, Parser.Parser, HOL.Definitions}
-alias THOU.Parser.Parser.Context
+import BeHOLd.Parser
+import BeHOLd.ClassicalHOL.Definitions
+import THOU.{Util, Prover}
+alias BeHOLd.Data.Context
 
 LoggerHelper.set_logger_warning()
 ```

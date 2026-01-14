@@ -1,8 +1,12 @@
 # A Structured Set of Higher-Order Problems - Section 5
 
 ```elixir
+System.put_env("HEX_HTTP_CONCURRENCY", "1")
+System.put_env("HEX_HTTP_TIMEOUT", "120")
+
 Mix.install([
   {:thou, path: Path.join(__DIR__, "..")},
+  {:behold, "~> 1.0.1"},
   {:kino, "~> 0.17.0"}
 ])
 ```
@@ -12,11 +16,11 @@ Mix.install([
 ```elixir
 import HOL.Data
 import THOU.Prover
-import THOU.Parser.Parser
-import THOU.Parser.TPTP
+import BeHOLd.Parser
+import BeHOLd.TPTP
 import THOU.Runner
 import THOU.PrettyPrint
-alias THOU.Parser.Parser.Context
+alias BeHOLd.Data.Context
 
 Logger.configure(level: :error)
 ```

@@ -56,7 +56,7 @@ defmodule THOU.Prover do
     default_params = Parameters.new()
 
     timeout = Keyword.get(opts, :timeout, 30_000)
-    canonicalize = Keyword.get(opts, :canonicalize, default_params.canonicalize)
+    rewrite = Keyword.get(opts, :rewrite, default_params.rewrite)
     branch_heuristic = Keyword.get(opts, :branch_heuristic, default_params.branch_heuristic)
     max_instantiations = Keyword.get(opts, :max_instantiations, default_params.max_instantiations)
     unification_depth = Keyword.get(opts, :unification_depth, default_params.unification_depth)
@@ -67,7 +67,7 @@ defmodule THOU.Prover do
           formulas,
           definitions,
           Parameters.new(
-            canonicalize: canonicalize,
+            canonicalize: rewrite,
             branch_heuristic: branch_heuristic,
             max_instantiations: max_instantiations,
             unification_depth: unification_depth

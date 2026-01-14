@@ -1,9 +1,13 @@
 # Debug
 
 ```elixir
+System.put_env("HEX_HTTP_CONCURRENCY", "1")
+System.put_env("HEX_HTTP_TIMEOUT", "120")
+
 Mix.install([
-  {:hol, "1.0.2"},
-  {:thou, path: Path.join(__DIR__, "..")}
+  {:thou, path: Path.join(__DIR__, "..")},
+  {:hol, "~> 1.0.2"},
+  {:behold, "~> 1.0.0"}
 ])
 ```
 
@@ -16,13 +20,13 @@ import HOL.Unification
 import HOL.Substitution
 import PrettyPrint
 import TPTPParser
-import THOU.Util
-import THOU.HOL.Definitions
-import THOU.HOL.Patterns
+import BeHOLd.ClassicalHOL.Definitions
+import BeHOLd.ClassicalHOL.Patterns
+import BeHOLd.Parser
+alias BeHOLd.Data.Context
+alias BeHOLd.TPTP
 import THOU.Prover
-import THOU.Parser.Parser
-alias THOU.Parser.Parser.Context
-alias THOU.Parser.TPTP
+import THOU.Util
 alias THOU.Runner
 import THOU.Preprocessing.Serialization
 alias THOU.Preprocessing.Tokenizer
@@ -31,10 +35,6 @@ alias THOU.Heuristics.NCPO
 
 Logger.configure(level: :info)
 Logger.put_application_level(:hol, :error)
-```
-
-```elixir
-{:ok, tokens, _, _, _, _} ="$i>$o" |> THOU.Parser.TPTPTokenizer.tokenize
 ```
 
 ## Custom Files
@@ -47,19 +47,18 @@ Path.wildcard("C:/Users/johan/Downloads/mirabelle-THF-output-3/mirabelle-output/
 |> Task.async_stream(fn path ->
     IO.puts("proving file #{path}")
     output = ExUnit.CaptureIO.capture_io(fn ->
-      Runner.prove_file(path, false)
+      Runner.prove_file(path, false, timeout: 10_000, max_concurrency: 1)
     end)
     output
   end,
-  timeout: 30_000,
-  on_timeout: :kill_task
+  timeout: :infinity
 )
 |> Enum.reduce(%{completed: 0, timeout: 0, error: 0, results: %{}, reasons: []}, fn result, acc ->
   case result do
     {:ok, output} ->
       prover_res = cond do
-        output =~ "CounterSatisfiable" -> "CounterSatisfiable"
-        output =~ "Theorem" -> "Theorem"
+        output =~ "STATUS: CounterSatisfiable" -> "CounterSatisfiable"
+        output =~ "STATUS: Theorem" -> "Theorem"
         true -> "Unknown"
       end
       new_results = Map.put(acc.results, prover_res, Map.get(acc.results, prover_res, 0) + 1)

@@ -231,86 +231,6 @@ defmodule THOU.Tableaux do
         Logger.notice("applying \"¬=r\"")
         {:closed, []}
 
-      ############################ EXTENSIONALITY #############################
-
-      equality(
-        hol_term(bvars: [], head: declaration(name: n) = h, args: args1, type: t),
-        hol_term(bvars: [], head: h, args: args2, type: t)
-      )
-      when n not in signature_symbols() ->
-        Logger.notice("applying \"=ext\"")
-
-        subproblems =
-          Enum.zip(args1, args2)
-          |> Enum.map(fn {t1, t2} ->
-            get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
-          end)
-          |> Enum.reduce(true_term(), fn t, acc ->
-            and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
-          end)
-
-        tableaux([subproblems | rest], definitions, parameters, state)
-
-      equality(
-        hol_term(bvars: [], head: hol_term() = h, args: args1, type: t),
-        hol_term(bvars: [], head: h, args: args2, type: t)
-      ) ->
-        Logger.notice("applying \"=ext\"")
-
-        subproblems =
-          Enum.zip(args1, args2)
-          |> Enum.map(fn {t1, t2} ->
-            get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
-          end)
-          |> Enum.reduce(true_term(), fn t, acc ->
-            and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
-          end)
-
-        tableaux([subproblems | rest], definitions, parameters, state)
-
-      negated(
-        equality(
-          hol_term(bvars: [], head: hol_term() = h, args: args1, type: t),
-          hol_term(bvars: [], head: h, args: args2, type: t)
-        )
-      ) ->
-        Logger.notice("applying \"¬=ext\"")
-
-        inner_subproblems =
-          Enum.zip(args1, args2)
-          |> Enum.map(fn {t1, t2} ->
-            get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
-          end)
-          |> Enum.reduce(true_term(), fn t, acc ->
-            and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
-          end)
-
-        subproblems = mk_appl_term(neg_term(), inner_subproblems)
-
-        tableaux([subproblems | rest], definitions, parameters, state)
-
-      negated(
-        equality(
-          hol_term(bvars: [], head: declaration(name: n) = h, args: args1, type: t),
-          hol_term(bvars: [], head: h, args: args2, type: t)
-        )
-      )
-      when n not in signature_symbols() ->
-        Logger.notice("applying \"¬=ext\"")
-
-        inner_subproblems =
-          Enum.zip(args1, args2)
-          |> Enum.map(fn {t1, t2} ->
-            get_term_type(t1) |> equals_term() |> mk_appl_term(t1) |> mk_appl_term(t2)
-          end)
-          |> Enum.reduce(true_term(), fn t, acc ->
-            and_term() |> mk_appl_term(t) |> mk_appl_term(acc)
-          end)
-
-        subproblems = mk_appl_term(neg_term(), inner_subproblems)
-
-        tableaux([subproblems | rest], definitions, parameters, state)
-
       ######################### TYPED EQUALITY SYMBOLS ########################
 
       # equality (type o) -> transform to equivalence
@@ -574,19 +494,7 @@ defmodule THOU.Tableaux do
         _ -> formula
       end
 
-    unif_checkpoints =
-      case unify_with_literals(stripped_formula, unif_set, constraints, parameters) do
-        [] ->
-          unify_with_literals(
-            sem_negate(formula),
-            sem_negate(unif_set),
-            constraints,
-            parameters
-          )
-
-        sol ->
-          sol
-      end
+    unif_checkpoints = unify_with_literals(stripped_formula, unif_set, constraints, parameters)
 
     case unif_checkpoints do
       [] ->

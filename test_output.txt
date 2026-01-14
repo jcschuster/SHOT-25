@@ -1,0 +1,18 @@
+Running ExUnit with seed: 293016, max_cases: 32
+
+     error: expected struct name in a match to be a compile time atom, alias or a variable, got: {:term, _, _, _, _, _, _}
+     Ôöé
+ 193 Ôöé     match?(%HOL.Data.hol_term{}, term) or match?(%HOL.Data.equality{}, term)
+     Ôöé            ^
+     Ôöé
+     ÔööÔöÇ test/serialization_test.exs:193:12: THOU.Preprocessing.SerializationTest.is_hol_term/1
+
+
+== Compilation error in file test/serialization_test.exs ==
+** (CompileError) test/serialization_test.exs: cannot compile module THOU.Preprocessing.SerializationTest (errors have been logged)
+    (stdlib 7.2) lists.erl:2673: :lists.mapfoldl_1/3
+    (stdlib 7.2) lists.erl:2673: :lists.mapfoldl_1/3
+    (elixir 1.19.4) expanding macro: Kernel.match?/2
+    test/serialization_test.exs:193: THOU.Preprocessing.SerializationTest.is_hol_term/1
+    (elixir 1.19.4) expanding macro: Kernel.or/2
+    test/serialization_test.exs:193: THOU.Preprocessing.SerializationTest.is_hol_term/1

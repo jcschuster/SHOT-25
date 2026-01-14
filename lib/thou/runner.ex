@@ -27,12 +27,14 @@ defmodule THOU.Runner do
 
   If no conjecture could be found within the given problem, tries to satisfy
   the axioms.
+
+  Options for `THOU.Prover.prove/4` can be specified.
   """
-  @spec prove_file(String.t(), boolean()) :: no_return()
-  def prove_file(path, is_tptp \\ true) do
+  @spec prove_file(String.t(), boolean(), Keyword.t()) :: no_return()
+  def prove_file(path, is_tptp \\ true, opts \\ []) do
     case TPTP.parse_file(path, is_tptp) do
       {:ok, problem} ->
-        run_prover(problem)
+        run_prover(problem, opts)
 
       {:error, reason} ->
         IO.puts(:stderr, "Error parsing file: #{reason}")
@@ -44,9 +46,11 @@ defmodule THOU.Runner do
   Problem file specified as string and prints the result to stdout. If no
   conjecture could be found within the given problem, tries to satisfy the
   axioms.
+
+  Options for `THOU.Prover.prove/4` can be specified.
   """
-  @spec run_prover(BeHOLd.Data.Problem.t()) :: no_return()
-  def run_prover(problem) do
+  @spec run_prover(BeHOLd.Data.Problem.t(), Keyword.t()) :: no_return()
+  def run_prover(problem, opts \\ []) do
     assumptions = Enum.map(problem.axioms, fn {_name, term} -> term end)
 
     case problem.conjecture do
@@ -54,20 +58,23 @@ defmodule THOU.Runner do
         IO.puts("--------------------------------------------------")
         IO.puts("Proving Conjecture: #{name}")
 
+        num_assms = length(assumptions)
+        num_defs = length(Map.keys(problem.definitions))
+
         IO.puts(
-          "Loaded #{length(assumptions)} axioms/hypotheses/lemmata/assumptions" <>
-            " and #{length(Map.keys(problem.definitions))} definitions."
+          "Loaded #{num_assms} assumption#{if num_assms != 1, do: "s", else: ""}" <>
+            " and #{num_defs} definition#{if num_defs != 1, do: "s", else: ""}."
         )
 
         IO.puts("--------------------------------------------------")
 
-        result = Prover.prove(conjecture_term, assumptions, problem.definitions)
+        result = Prover.prove(conjecture_term, assumptions, problem.definitions, opts)
         pp_proof_result(result) |> IO.puts()
 
       nil ->
         # Fallback: If there is no conjecture, check if the axioms are satisfiable
         IO.puts("No conjecture found. Checking consistency (SAT) of axioms...")
-        result = Prover.sat(assumptions, problem.definitions)
+        result = Prover.sat(assumptions, problem.definitions, opts)
 
         case result do
           {:unsat, :closed} -> IO.puts("Result: Unsatisfiable (Axioms contain a contradiction)")
