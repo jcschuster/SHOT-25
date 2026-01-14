@@ -44,8 +44,9 @@ defmodule THOU.Prover do
 
   Internally relies on the `THOU.Tableaux.tableaux/3` function as model finder.
 
-  Options that can be given are a `:timeout` in milliseconds, which defaults
-  to 30s and all technical parameters of `THOU.Tableaux.tableaux/3`.
+  Parameters that can be given in the `opts` field are a `:timeout` in
+  milliseconds, which defaults to 30s and all technical parameters of
+  `THOU.Tableaux.tableaux/3`.
   """
   @spec sat(HOL.Data.hol_term() | [HOL.Data.hol_term()], definitions(), Keyword.t()) ::
           sat_result()
@@ -94,8 +95,9 @@ defmodule THOU.Prover do
   describing the output, which can be pretty-printed with a call to
   `THOU.PrettyPrint.pp_proof_result/1`.
 
-  Parameters that can be given are a timeout in milliseconds (defaults to 30s)
-  and all technical parameters of `THOU.Tableaux.tableaux/3`.
+  Parameters that can be given in the `opts` field are a timeout in
+  milliseconds (defaults to 30s) and all technical parameters of
+  `THOU.Tableaux.tableaux/3`.
   """
   @spec prove(HOL.Data.hol_term(), [HOL.Data.hol_term()], definitions(), Keyword.t()) ::
           proof_result()

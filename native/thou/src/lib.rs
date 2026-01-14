@@ -18,6 +18,12 @@ define_language! {
     }
 }
 
+#[derive(PartialEq)]
+enum Mode {
+    Simplify,
+    Orient,
+}
+
 struct OrderedAstSize;
 
 impl CostFunction<HOL> for OrderedAstSize {
@@ -27,9 +33,7 @@ impl CostFunction<HOL> for OrderedAstSize {
     where
         C: FnMut(Id) -> Self::Cost,
     {
-        let op_cost = 1;
-
-        let mut total_size = op_cost;
+        let mut total_size = 1;
         let mut children_strings = Vec::new();
 
         enode.for_each(|id| {
@@ -39,35 +43,32 @@ impl CostFunction<HOL> for OrderedAstSize {
         });
 
         let op_str = match enode {
-            HOL::Symbol(s) => s.as_str(),
-            HOL::True(_) => "⊤∷o",
-            HOL::False(_) => "⊥∷o",
-            HOL::And(_) => "∧∷o⇾o⇾o",
-            HOL::Or(_) => "∨∷o⇾o⇾o",
-            HOL::Not(_) => "¬∷o⇾o",
-            HOL::Implies(_) => "⊃∷o⇾o⇾o",
-            HOL::Equiv(_) => "≡∷o⇾o⇾o",
-            HOL::Eq(_) => "=",
-            HOL::Abs(_) => "^",
-            HOL::App(_) => "@",
+            HOL::Symbol(s) => s.as_str().to_string(),
+            HOL::True(_) => "⊤∷o".to_string(),
+            HOL::False(_) => "⊥∷o".to_string(),
+            HOL::And(_) => "∧∷o⇾o⇾o".to_string(),
+            HOL::Or(_) => "∨∷o⇾o⇾o".to_string(),
+            HOL::Not(_) => "¬∷o⇾o".to_string(),
+            HOL::Implies(_) => "⊃∷o⇾o⇾o".to_string(),
+            HOL::Equiv(_) => "≡∷o⇾o⇾o".to_string(),
+            HOL::Eq(_) => "=".to_string(),
+            HOL::Abs(_) => "^".to_string(),
+            HOL::App(_) => "@".to_string(),
         };
 
         let self_string = if children_strings.is_empty() {
-            op_str.to_string()
+            op_str
         } else {
             format!("({} {})", op_str, children_strings.join(" "))
         };
 
-        let penalty = match enode {
-            HOL::And(_) | HOL::Or(_) | HOL::Equiv(_) | HOL::Eq(_) => {
-                if children_strings.len() == 2 && children_strings[0] > children_strings[1] {
-                    1_000
-                } else {
-                    0
-                }
-            }
-            _ => 0,
-        };
+        let penalty = matches!(enode, HOL::And(_) | HOL::Or(_) | HOL::Equiv(_) | HOL::Eq(_))
+            .then(|| {
+                (children_strings.len() == 2 && children_strings[0] > children_strings[1])
+                    .then_some(1_000)
+                    .unwrap_or(0)
+            })
+            .unwrap_or(0);
 
         (total_size + penalty, self_string)
     }
@@ -84,72 +85,94 @@ fn try_rewrite(name: &str, lhs: &str, rhs: &str) -> Result<Rewrite<HOL, ()>, Str
     Rewrite::new(name, p_lhs, p_rhs).map_err(|e| format!("Rule '{}' error: {}", name, e))
 }
 
-fn make_rules() -> Result<Vec<Rewrite<HOL, ()>>, String> {
-    let raw_rules = vec![
-        ("absorb-and", "(∧∷o⇾o⇾o ?a (∨∷o⇾o⇾o ?a ?b))", "?a"),
-        ("absorb-or", "(∨∷o⇾o⇾o ?a (∧∷o⇾o⇾o ?a ?b))", "?a"),
-        (
-            "assoc-and",
-            "(∧∷o⇾o⇾o ?a (∧∷o⇾o⇾o ?b ?c))",
-            "(∧∷o⇾o⇾o (∧∷o⇾o⇾o ?a ?b) ?c)",
-        ),
-        (
-            "assoc-or",
-            "(∨∷o⇾o⇾o ?a (∨∷o⇾o⇾o ?b ?c))",
-            "(∨∷o⇾o⇾o (∨∷o⇾o⇾o ?a ?b) ?c)",
-        ),
-        ("comm-and", "(∧∷o⇾o⇾o ?a ?b)", "(∧∷o⇾o⇾o ?b ?a)"),
-        ("comm-or", "(∨∷o⇾o⇾o ?a ?b)", "(∨∷o⇾o⇾o ?b ?a)"),
-        // commutativity of equivalence and equality leeds to undesired priorities
-        (
-            "demorg-and",
-            "(¬∷o⇾o (∧∷o⇾o⇾o ?a ?b))",
-            "(∨∷o⇾o⇾o (¬∷o⇾o ?a) (¬∷o⇾o ?b))",
-        ),
-        (
-            "demorg-or",
-            "(¬∷o⇾o (∨∷o⇾o⇾o ?a ?b))",
-            "(∧∷o⇾o⇾o (¬∷o⇾o ?a) (¬∷o⇾o ?b))",
-        ),
-        ("elim-dneg", "(¬∷o⇾o (¬∷o⇾o ?a))", "?a"),
-        ("idem-and", "(∧∷o⇾o⇾o ?a ?a)", "?a"),
-        ("idem-or", "(∨∷o⇾o⇾o ?a ?a)", "?a"),
-        ("neg-f", "(¬∷o⇾o ⊥∷o)", "⊤∷o"),
-        ("neg-t", "(¬∷o⇾o ⊤∷o)", "⊥∷o"),
-        ("simp-f-and", "(∧∷o⇾o⇾o ?a ⊥∷o)", "⊥∷o"),
-        ("simp-f-or", "(∨∷o⇾o⇾o ?a ⊥∷o)", "?a"),
-        ("simp-t-and", "(∧∷o⇾o⇾o ?a ⊤∷o)", "?a"),
-        ("simp-t-or", "(∨∷o⇾o⇾o ?a ⊤∷o)", "⊤∷o"),
-        ("contradict", "(∧∷o⇾o⇾o ?a (¬∷o⇾o ?a))", "⊥∷o"),
-        ("exclmiddle", "(∨∷o⇾o⇾o ?a (¬∷o⇾o ?a))", "⊤∷o"),
-    ];
+const COMMON_RULES: &[(&str, &str, &str)] = &[
+    //----- commutativity -----//
+    ("comm-and", "(∧∷o⇾o⇾o ?a ?b)", "(∧∷o⇾o⇾o ?b ?a)"),
+    ("comm-or", "(∨∷o⇾o⇾o ?a ?b)", "(∨∷o⇾o⇾o ?b ?a)"),
+    //----- associativity -----//
+    (
+        "assoc-and",
+        "(∧∷o⇾o⇾o ?a (∧∷o⇾o⇾o ?b ?c))",
+        "(∧∷o⇾o⇾o (∧∷o⇾o⇾o ?a ?b) ?c)",
+    ),
+    (
+        "assoc-or",
+        "(∨∷o⇾o⇾o ?a (∨∷o⇾o⇾o ?b ?c))",
+        "(∨∷o⇾o⇾o (∨∷o⇾o⇾o ?a ?b) ?c)",
+    ),
+];
 
-    let mut rules = Vec::new();
-    for (name, lhs, rhs) in raw_rules {
-        let rw = try_rewrite(name, lhs, rhs)?;
-        rules.push(rw);
-    }
-    Ok(rules)
+const SIMP_RULES: &[(&str, &str, &str)] = &[
+    //----- deMorgan rules -----//
+    (
+        "demorg-and",
+        "(¬∷o⇾o (∧∷o⇾o⇾o ?a ?b))",
+        "(∨∷o⇾o⇾o (¬∷o⇾o ?a) (¬∷o⇾o ?b))",
+    ),
+    (
+        "demorg-or",
+        "(¬∷o⇾o (∨∷o⇾o⇾o ?a ?b))",
+        "(∧∷o⇾o⇾o (¬∷o⇾o ?a) (¬∷o⇾o ?b))",
+    ),
+    //----- simplification rules -----//
+    ("absorb-and", "(∧∷o⇾o⇾o ?a (∨∷o⇾o⇾o ?a ?b))", "?a"),
+    ("absorb-or", "(∨∷o⇾o⇾o ?a (∧∷o⇾o⇾o ?a ?b))", "?a"),
+    ("contradict", "(∧∷o⇾o⇾o ?a (¬∷o⇾o ?a))", "⊥∷o"),
+    ("elim-dneg", "(¬∷o⇾o (¬∷o⇾o ?a))", "?a"),
+    ("exclmiddle", "(∨∷o⇾o⇾o ?a (¬∷o⇾o ?a))", "⊤∷o"),
+    ("idem-and", "(∧∷o⇾o⇾o ?a ?a)", "?a"),
+    ("idem-or", "(∨∷o⇾o⇾o ?a ?a)", "?a"),
+    ("neg-f", "(¬∷o⇾o ⊥∷o)", "⊤∷o"),
+    ("neg-t", "(¬∷o⇾o ⊤∷o)", "⊥∷o"),
+    ("simp-f-and", "(∧∷o⇾o⇾o ?a ⊥∷o)", "⊥∷o"),
+    ("simp-f-or", "(∨∷o⇾o⇾o ?a ⊥∷o)", "?a"),
+    ("simp-t-and", "(∧∷o⇾o⇾o ?a ⊤∷o)", "?a"),
+    ("simp-t-or", "(∨∷o⇾o⇾o ?a ⊤∷o)", "⊤∷o"),
+];
+
+fn make_rules(mode: Mode) -> Result<Vec<Rewrite<HOL, ()>>, String> {
+    let rules = if mode == Mode::Simplify {
+        COMMON_RULES.iter().chain(SIMP_RULES)
+    } else {
+        COMMON_RULES.iter().chain([].iter())
+    };
+
+    rules
+        .map(|(name, lhs, rhs)| try_rewrite(name, lhs, rhs))
+        .collect()
 }
 
-#[rustler::nif]
-fn simplify(s: &str) -> String {
+fn run_egg_on_expr(expr: RecExpr<HOL>, rules: Vec<Rewrite<HOL, ()>>) -> String {
+    let runner = Runner::default().with_expr(&expr).run(&rules);
+    let root = match runner.roots.first() {
+        Some(&r) => r,
+        None => return "ERROR: No roots".to_string(),
+    };
+    let extractor = Extractor::new(&runner.egraph, OrderedAstSize);
+    let (_best_cost, best) = extractor.find_best(root);
+    best.to_string()
+}
+
+fn process_expr(s: &str, mode: Mode) -> String {
     let expr: RecExpr<HOL> = match s.parse() {
         Ok(e) => e,
         Err(e) => return format!("ERROR: Parse failed: {}", e),
     };
-    let rules = match make_rules() {
+    let rules = match make_rules(mode) {
         Ok(r) => r,
         Err(e) => return format!("ERROR: Invalid Rules: {}", e),
     };
-    let runner = Runner::default().with_expr(&expr).run(&rules);
-    if runner.roots.is_empty() {
-        return "ERROR: No roots".to_string();
-    }
-    let root = runner.roots[0];
-    let extractor = Extractor::new(&runner.egraph, OrderedAstSize);
-    let (_best_cost, best) = extractor.find_best(root);
-    best.to_string()
+    run_egg_on_expr(expr, rules)
+}
+
+#[rustler::nif]
+fn egg_simplify(s: &str) -> String {
+    process_expr(s, Mode::Simplify)
+}
+
+#[rustler::nif]
+fn egg_simplify_ac(s: &str) -> String {
+    process_expr(s, Mode::Orient)
 }
 
 rustler::init!("Elixir.THOU.Preprocessing.Rewriting");

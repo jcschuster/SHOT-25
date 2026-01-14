@@ -1,10 +1,5 @@
 defmodule THOU.Preprocessing.SExprTokenizer do
-  @moduledoc """
-  Defines a `tokenize/1` fucntion for tokenization of an s-expression for
-  deserialization using `NimbleParsec` to annotate tokens for easy matching.
-  For information about the returned structure, see
-  https://hexdocs.pm/nimble_parsec/NimbleParsec.html.
-  """
+  @moduledoc false
   import NimbleParsec
 
   whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 1) |> ignore()

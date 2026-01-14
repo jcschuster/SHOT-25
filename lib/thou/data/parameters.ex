@@ -4,8 +4,8 @@ defmodule THOU.Data.Parameters do
 
   The parameters are:
 
-  - `:canonicalize`: Whether or not to preprocess/canonicalize a formula.
-  Defaults to `true`.
+  - `:rewrite`: What method to use for preprocessing a formula. Can be
+  `:simplify` (default), `:orient` or `nil` if no preprocessing should happen.
 
   - `:branch_heuristic`: Which branch heuristic to use (default: `:ncpo`)
 
@@ -20,20 +20,21 @@ defmodule THOU.Data.Parameters do
   number of available threads.
   """
 
-  defstruct canonicalize: true,
+  defstruct rewrite: :simplify,
             branch_heuristic: :ncpo,
             max_instantiations: 4,
             unification_depth: 8,
             max_concurrency: System.schedulers_online()
 
   @typedoc """
-  Whether or not to canonicalize a formula can be `true` or `false`. The branch
-  heuristic can be an atom or `nil` if no heuristic should be used. The maximum
-  instantiations of a quantifier, the unification depth and the maximum number
-  of threads to use for parallelization is a positive integer.
+  The field `rewrite` specifies whether to just orient disjunction and
+  conjunction symbols, use additional simplification rules or do nothing. The
+  branch heuristic can be an atom or `nil` if no heuristic should be used. The
+  maximum instantiations of a quantifier, the unification depth and the maximum
+  number of threads to use for parallelization is a positive integer.
   """
   @type t() :: %__MODULE__{
-          canonicalize: boolean(),
+          rewrite: :simplify | :orient | nil,
           branch_heuristic: atom() | nil,
           max_instantiations: pos_integer(),
           unification_depth: pos_integer(),
@@ -48,7 +49,7 @@ defmodule THOU.Data.Parameters do
   def new(opts \\ []) do
     default_params = %__MODULE__{}
 
-    canonicalize = Keyword.get(opts, :canonicalize, default_params.canonicalize)
+    rewrite = Keyword.get(opts, :rewrite, default_params.rewrite)
     branch_heuristic = Keyword.get(opts, :branch_heuristic, default_params.branch_heuristic)
 
     max_instantiations =
@@ -59,7 +60,7 @@ defmodule THOU.Data.Parameters do
     max_concurrency = Keyword.get(opts, :max_concurrency, default_params.max_concurrency)
 
     %__MODULE__{
-      canonicalize: canonicalize,
+      rewrite: rewrite,
       branch_heuristic: branch_heuristic,
       max_instantiations: max_instantiations,
       unification_depth: unification_depth,

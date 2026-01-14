@@ -24,6 +24,9 @@ defmodule THOU.Runner do
   variable `TPTP_ROOT` needs to be registered. After the variable has been
   registered, a TPTP problem file can be parsed by specifying the path from the
   root folder to that problem in `path`.
+
+  If no conjecture could be found within the given problem, tries to satisfy
+  the axioms.
   """
   @spec prove_file(String.t(), boolean()) :: no_return()
   def prove_file(path, is_tptp \\ true) do
@@ -37,8 +40,9 @@ defmodule THOU.Runner do
   end
 
   @doc """
-  Runs the prover on a given problem struct and prints the result to stdout.
-  If no conjecture could be found in the given problem, tries to satisfy the
+  Runs the prover on a given `BeHOLd.Data.Problem` struct from parsing a TPTP
+  Problem file specified as string and prints the result to stdout. If no
+  conjecture could be found within the given problem, tries to satisfy the
   axioms.
   """
   @spec run_prover(BeHOLd.Data.Problem.t()) :: no_return()
