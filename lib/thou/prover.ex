@@ -63,7 +63,7 @@ defmodule THOU.Prover do
 
     task =
       Task.async(fn ->
-        tableaux(
+        tableau(
           formulas,
           definitions,
           Parameters.new(

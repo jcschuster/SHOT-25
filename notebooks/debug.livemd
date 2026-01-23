@@ -47,13 +47,13 @@ Path.wildcard("C:/Users/johan/Downloads/mirabelle-THF-output-3/mirabelle-output/
 |> Task.async_stream(fn path ->
     IO.puts("proving file #{path}")
     output = ExUnit.CaptureIO.capture_io(fn ->
-      Runner.prove_file(path, false, timeout: 10_000, max_concurrency: 1)
+      Runner.prove_file(path, false, timeout: 30_000, max_concurrency: 1, rewrite: :simplify)
     end)
     output
   end,
   timeout: :infinity
 )
-|> Enum.reduce(%{completed: 0, timeout: 0, error: 0, results: %{}, reasons: []}, fn result, acc ->
+|> Enum.reduce(%{completed: 0, error: 0, results: %{}, reasons: []}, fn result, acc ->
   case result do
     {:ok, output} ->
       prover_res = cond do
@@ -63,20 +63,33 @@ Path.wildcard("C:/Users/johan/Downloads/mirabelle-THF-output-3/mirabelle-output/
       end
       new_results = Map.put(acc.results, prover_res, Map.get(acc.results, prover_res, 0) + 1)
       %{acc | completed: acc[:completed] + 1, results: new_results}
-    {:exit, :timeout} ->
-      IO.puts("timeout")
-      %{acc | timeout: acc[:timeout] + 1}
     {:exit, reason} ->
       IO.puts("crashed: #{inspect reason}")
       %{acc | error: acc[:error] + 1, reasons: acc[:reasons] ++ [reason]}
   end
 end)
 
+# rewrite: nil
 # %{
-#   timeout: 379,
 #   error: 0,
-#   completed: 581,
-#   results: %{"CounterSatisfiable" => 60, "Theorem" => 90, "Unknown" => 431},
+#   completed: 80,
+#   results: %{"Theorem" => 11, "Unknown" => 69},
+#   reasons: []
+# }
+
+# rewrite: :orient
+# %{
+#   error: 0,
+#   completed: 80,
+#   results: %{"Theorem" => 8, "Unknown" => 72},
+#   reasons: []
+# }
+
+# rewrite: :simplify
+# %{
+#   error: 0,
+#   completed: 80,
+#   results: %{"Theorem" => 7, "Unknown" => 73},
 #   reasons: []
 # }
 ```

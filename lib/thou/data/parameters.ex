@@ -5,7 +5,7 @@ defmodule THOU.Data.Parameters do
   The parameters are:
 
   - `:rewrite`: What method to use for preprocessing a formula. Can be
-  `:simplify` (default), `:orient` or `nil` if no preprocessing should happen.
+  `:orient` (default), `:simplify` or `nil` if no preprocessing should happen.
 
   - `:branch_heuristic`: Which branch heuristic to use (default: `:ncpo`)
 
@@ -20,7 +20,7 @@ defmodule THOU.Data.Parameters do
   number of available threads.
   """
 
-  defstruct rewrite: :simplify,
+  defstruct rewrite: :orient,
             branch_heuristic: :ncpo,
             max_instantiations: 4,
             unification_depth: 8,

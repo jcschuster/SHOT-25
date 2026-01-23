@@ -318,6 +318,6 @@ defmodule THOU.Heuristics.NCPO do
 
   defp quantify_fvars(hol_term(fvars: [declaration(type: type) = fv | _]) = t) do
     abs = mk_abstr_term(t, fv)
-    pi_term(mk_type(:o, [type])) |> mk_appl_term(abs) |> quantify_fvars()
+    pi_term(type) |> mk_appl_term(abs) |> quantify_fvars()
   end
 end

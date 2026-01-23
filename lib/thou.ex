@@ -1,6 +1,6 @@
 defmodule THOU do
   @moduledoc """
-  `THOU` (tableaux using higher-order unification) is a tableaux prover for
+  `THOU` (tableaux using higher-order unification) is a tableau prover for
   simply-typed higher-order logic which relies on pre-unification provided by
   the `HOL` library (https://hexdocs.pm/hol/api-reference.html) for branch
   closure.
@@ -12,7 +12,7 @@ defmodule THOU do
   Tries to satisfy a given formula or list of formulas. Returns a
   `THOU.Prover.sat_result` describing one of three outcomes.
 
-  Internally relies on the `THOU.Tableaux.tableaux/3` function as model finder.
+  Internally relies on the `THOU.Tableaux.tableau/3` function as model finder.
 
   Delegates function call to `THOU.Prover`.
   """
@@ -25,7 +25,7 @@ defmodule THOU do
   given definitions. Returns a `THOU.Prover.sat_result` describing one of three
   outcomes.
 
-  Internally relies on the `THOU.Tableaux.tableaux/3` function as model finder.
+  Internally relies on the `THOU.Tableaux.tableau/3` function as model finder.
 
   Delegates function call to `THOU.Prover`.
   """
@@ -38,11 +38,11 @@ defmodule THOU do
   given definitions. Returns a `THOU.Prover.sat_result` describing one of three
   outcomes.
 
-  Internally relies on the `THOU.Tableaux.tableaux/3` function as model finder.
+  Internally relies on the `THOU.Tableaux.tableau/3` function as model finder.
 
   Parameters that can be given in the `opts` field are a `:timeout` in
   milliseconds, which defaults to 30s and all technical parameters of
-  `THOU.Tableaux.tableaux/3`.
+  `THOU.Tableaux.tableau/3`.
 
   Delegates function call to `THOU.Prover`.
   """
@@ -52,7 +52,7 @@ defmodule THOU do
 
   @doc """
   Tries to proof a given term by showing that there is no couterexample for its
-  negation, i.e., that `THOU.Tableaux.tableaux/3` can close all branches.
+  negation, i.e., that `THOU.Tableaux.tableau/3` can close all branches.
   Returns a `THOU.Prover.proof_result` describing the output, which can be
   pretty-printed with a call to `THOU.PrettyPrint.pp_proof_result/1`.
 
@@ -65,7 +65,7 @@ defmodule THOU do
   @doc """
   Tries to proof a given term based on the given assumptions by showing that
   there is no couterexample for its negation, i.e., that
-  `THOU.Tableaux.tableaux/3` can close all branches. Returns a
+  `THOU.Tableaux.tableau/3` can close all branches. Returns a
   `THOU.Prover.proof_result` describing the output, which can be pretty-printed
   with a call to `THOU.PrettyPrint.pp_proof_result/1`.
 
@@ -78,7 +78,7 @@ defmodule THOU do
   @doc """
   Tries to proof a given term based on the given assumptions and definitions by
   showing that there is no couterexample for its negation, i.e., that
-  `THOU.Tableaux.tableaux/3` can close all branches. Returns a
+  `THOU.Tableaux.tableau/3` can close all branches. Returns a
   `THOU.Prover.proof_result` describing the output, which can be pretty-printed
   with a call to `THOU.PrettyPrint.pp_proof_result/1`.
 
@@ -91,13 +91,13 @@ defmodule THOU do
   @doc """
   Tries to proof a given term based on the given assumptions and definitions by
   showing that there is no couterexample for its negation, i.e., that
-  `THOU.Tableaux.tableaux/3` can close all branches. Returns a
+  `THOU.Tableaux.tableau/3` can close all branches. Returns a
   `THOU.Prover.proof_result` describing the output, which can be pretty-printed
   with a call to `THOU.PrettyPrint.pp_proof_result/1`.
 
   Parameters that can be given in the `opts` field are a timeout in
   milliseconds (defaults to 30s) and all technical parameters of
-  `THOU.Tableaux.tableaux/3`.
+  `THOU.Tableaux.tableau/3`.
 
   Delegates function call to `THOU.Prover`.
   """
