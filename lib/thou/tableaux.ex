@@ -316,7 +316,7 @@ defmodule THOU.Tableaux do
         a_x = mk_appl_term(a, x_term)
         b_x = mk_appl_term(b, x_term)
         equals_term = mk_term(equals_const(goal_type))
-        pi = pi_const([first_arg_type]) |> mk_term()
+        pi = pi_const(first_arg_type) |> mk_term()
 
         inner_equality = equals_term |> mk_appl_term(a_x) |> mk_appl_term(b_x)
         abstr = inner_equality |> mk_abstr_term(x)

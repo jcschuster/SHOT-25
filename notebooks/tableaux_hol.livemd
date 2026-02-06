@@ -456,15 +456,15 @@ $\mathbf{sk}^\mu_{\alpha\bar t}(\bar{T})$: Skolem term, indexed by $\mu$ mapping
 
 $\mathbf{X}^\mu_\alpha$: Free variable, indexed by $\mu$ of type $\alpha$
 
-$\star$: Tableaux closed
+$\star$: Tableau closed
 
 $\sigma$: Substitution
 
-__Tableaux__
+__Tableau__
 
 0\. $\neg \exists F_{o\iota\iota}. \forall Y_{o\iota}. \exists X_\iota. F X = Y$
 
-1\. $\neg\neg\Sigma(\lambda F. \forall Y. \exists X. F X = Y)$ $\quad$ (Tableaux initialization: negate formula)
+1\. $\neg\neg\Sigma(\lambda F. \forall Y. \exists X. F X = Y)$ $\quad$ (Tableau initialization: negate formula)
 
 2\. $\Sigma(\lambda F. \forall Y. \exists X. F X = Y)$ $\quad$ $\neg\neg (1)$
 
@@ -472,7 +472,7 @@ __Tableaux__
 
 4\. $\Sigma(\lambda X. \mathbf{sk}^1 X = \mathbf{X}^1_{o\iota})$ $\quad$ $\Pi (3)$
 
-5\. $(\mathbf{sk}^1(\mathbf{sk}^2_{\iota(o\iota)} \mathbf{X}^1)) ) \mathbf{X}^1$ $\quad$ $\Sigma$ (4)
+5\. $(\mathbf{sk}^1(\mathbf{sk}^2_{\iota(o\iota)} \mathbf{X}^1)) ) = \mathbf{X}^1$ $\quad$ $\Sigma$ (4)
 
 6\. $\Pi(\lambda Z_\iota. ((\mathbf{sk}^1(\mathbf{sk}^2 \mathbf{X}^1)) Z_\iota) = (\mathbf{X}^1 Z_\iota))$ $\quad$ Def. $= (5)$
 

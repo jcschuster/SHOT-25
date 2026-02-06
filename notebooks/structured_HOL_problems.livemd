@@ -6,7 +6,7 @@ System.put_env("HEX_HTTP_TIMEOUT", "120")
 
 Mix.install([
   {:thou, path: Path.join(__DIR__, "..")},
-  {:behold, "~> 1.0.1"},
+  {:behold, "~> 1.1.0"},
   {:kino, "~> 0.17.0"}
 ])
 ```
@@ -99,13 +99,20 @@ import MyDefs
 Example 6a)
 
 ```elixir
+"![X: $i]: X = X"
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# THM -> 0ms
+```
+
+```elixir
 {:ok, problem} = parse_string(leibnitz_eq("$i") <>
 "thf(leibnitz_eq_reflexive,conjecture,
   ![X : $i] : leibnitz_eq_i @ X @ X
 )."
 )
 
-run_prover(problem)
+# run_prover(problem)
+# THM -> 2ms
 ```
 
 ```elixir
@@ -114,7 +121,8 @@ run_prover(problem)
   ![X : $i] : andrews_eq_i @ X @ X
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# THM -> 2ms
 ```
 
 ```elixir
@@ -123,10 +131,17 @@ run_prover(problem)
   ![X : $i>$i] : extens_eq_i_i @ X @ X
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# THM -> 3ms
 ```
 
 Example 6b)
+
+```elixir
+"![X : $i, Y : $i]: ((X = Y) => (Y = X))"
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# THM -> 30ms
+```
 
 ```elixir
 {:ok, problem} = parse_string(leibnitz_eq("$i") <>
@@ -135,7 +150,8 @@ thf(leibnitz_eq_symm,conjecture,
   ![X : $i, Y : $i]: ((leibnitz_eq_i @ X @ Y) => (leibnitz_eq_i @ Y @ X))
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# THM -> 0.1s
 ```
 
 ```elixir
@@ -144,7 +160,8 @@ run_prover(problem)
   ![X : $i, Y : $i]: ((andrews_eq_i @ X @ Y) => (andrews_eq_i @ Y @ X))
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# THM -> 5ms
 ```
 
 ```elixir
@@ -153,10 +170,17 @@ run_prover(problem)
   ![X : $i>$i, Y : $i>$i]: ((extens_eq_i_i @ X @ Y) => (extens_eq_i_i @ Y @ X))
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# -> timeout
 ```
 
 Example 6c)
+
+```elixir
+"![X : $i, Y : $i, Z : $i]: (((X = Y) & (Y = Z)) => (X = Z))"
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# -> timeout
+```
 
 ```elixir
 {:ok, problem} = parse_string(leibnitz_eq("$i") <>
@@ -168,7 +192,8 @@ Example 6c)
   )
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# -> timeout
 ```
 
 ```elixir
@@ -181,7 +206,8 @@ run_prover(problem)
   )
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# THM -> 10ms
 ```
 
 ```elixir
@@ -194,11 +220,17 @@ run_prover(problem)
   )
 ).")
 
-run_prover(problem)
+# run_prover(problem)
 # -> timeout
 ```
 
 Example 7a)
+
+```elixir
+"![X : $i, Y : $i, F : $i>$i]: ((X = Y) => ((F @ X) = (F @ Y)))"
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# THM -> 31ms
+```
 
 ```elixir
 {:ok, problem} = parse_string(leibnitz_eq("$i") <>
@@ -208,7 +240,8 @@ Example 7a)
   )
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# THM -> 32ms
 ```
 
 ```elixir
@@ -219,7 +252,8 @@ run_prover(problem)
   )
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# THM -> 3ms
 ```
 
 ```elixir
@@ -230,10 +264,17 @@ run_prover(problem)
   )
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# -> timeout
 ```
 
 Example 7b)
+
+```elixir
+"![X : $i, Y : $i, P : $i>$o]: (((X = Y) & P @ X) => P @ Y)"
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# THM -> 8ms
+```
 
 ```elixir
 {:ok, problem} = parse_string(leibnitz_eq("$i") <>
@@ -243,7 +284,8 @@ Example 7b)
   )
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# THM -> 7ms
 ```
 
 ```elixir
@@ -254,7 +296,8 @@ run_prover(problem)
   )
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# CSA -> 3ms
 ```
 
 ```elixir
@@ -265,7 +308,8 @@ run_prover(problem)
   )
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# CSA -> 2ms
 ```
 
 Example 8
@@ -278,10 +322,17 @@ Example 8
   )
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# THM -> 30ms
 ```
 
 Example 9a)
+
+```elixir
+"![F : $i>$i, G : $i>$i]: ((F = G) => (![X : $i]: ((F @ X) = (G @ X))))"
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# -> timeout
+```
 
 ```elixir
 {:ok, problem} = parse_string(leibnitz_eq("$i") <> leibnitz_eq("($i>$i)") <>
@@ -290,7 +341,8 @@ Example 9a)
   ((leibnitz_eq_OPENiTOiCLOSE @ F @ G) => (![X : $i]: (leibnitz_eq_i @ (F @ X) @ (G @ X))))
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# THM -> 48ms
 ```
 
 ```elixir
@@ -300,15 +352,17 @@ run_prover(problem)
   ((andrews_eq_OPENiTOiCLOSE @ F @ G) => (![X : $i]: (andrews_eq_i @ (F @ X) @ (G @ X))))
 ).")
 
-run_prover(problem)
-```
-
-```elixir
-"![F : $i>$i, G : $i>$i]: ((F = G) => (![X : $i]: ((F @ X) = (G @ X))))"
-  |> parse |> prove |> pp_proof_result |> IO.puts
+# run_prover(problem)
+# THM -> 5ms
 ```
 
 Example 9b)
+
+```elixir
+"![A : $o, B : $o]: ((A = B) => (A <=> B))"
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# THM -> 2ms
+```
 
 ```elixir
 {:ok, problem} = parse_string(leibnitz_eq("$o") <>
@@ -316,7 +370,8 @@ Example 9b)
 ![A : $o, B : $o]: ((leibnitz_eq_o @ A @ B) => (A <=> B))
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# THM -> 7ms
 ```
 
 ```elixir
@@ -325,15 +380,17 @@ run_prover(problem)
 ![A : $o, B : $o]: ((andrews_eq_o @ A @ B) => (A <=> B))
 ).")
 
-run_prover(problem)
-```
-
-```elixir
-"![A : $o, B : $o]: ((A = B) => (A <=> B))"
-  |> parse |> prove |> pp_proof_result |> IO.puts
+# run_prover(problem)
+# CSA -> 1ms
 ```
 
 Example 10
+
+```elixir
+"![A : $o, B : $o]: ((A <=> B) => (A = B))"
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# THM -> 1ms
+```
 
 ```elixir
 {:ok, problem} = parse_string(leibnitz_eq("$o") <>
@@ -341,7 +398,8 @@ Example 10
 ![A : $o, B : $o]: ((A <=> B) => (leibnitz_eq_o @ A @ B))
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# CSA -> 1ms
 ```
 
 ```elixir
@@ -350,15 +408,17 @@ run_prover(problem)
 ![A : $o, B : $o]: ((A <=> B) => (andrews_eq_o @ A @ B))
 ).")
 
-run_prover(problem)
-```
-
-```elixir
-"![A : $o, B : $o]: ((A <=> B) => (A = B))"
-  |> parse |> prove |> pp_proof_result |> IO.puts
+# run_prover(problem)
+# THM -> 5ms
 ```
 
 Example 11
+
+```elixir
+"![F : $i>$i, G : $i>$i]: ((![X : $i]: ((F @ X) = (G @ X))) => F = G)"
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# -> timeout
+```
 
 ```elixir
 {:ok, problem} = parse_string(leibnitz_eq("$i") <> leibnitz_eq("($i>$i)") <>
@@ -371,7 +431,8 @@ Example 11
   ))
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# INC -> 10ms
 ```
 
 ```elixir
@@ -385,7 +446,8 @@ run_prover(problem)
   ))
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# THM -> 29ms
 ```
 
 ```elixir
@@ -399,13 +461,8 @@ run_prover(problem)
   ))
 ).")
 
-run_prover(problem)
-# -> timeout
-```
-
-```elixir
-"![F : $i>$i, G : $i>$i]: ((![X : $i]: ((F @ X) = (G @ X))) => F = G)"
-  |> parse |> prove |> pp_proof_result |> IO.puts
+# run_prover(problem)
+# INC -> 29.4s
 ```
 
 ## 5.2 Extensionality
@@ -417,10 +474,19 @@ ctx = Context.new()
   |> Context.put_const("f", mk_type(:i, [mk_type(:i)]))
 
 "(p @ (^[X : $i] : f @ X)) => p @ f"
-  |> parse(ctx) |> prove |> pp_proof_result |> IO.puts
+#  |> parse(ctx) |> prove |> pp_proof_result |> IO.puts
+# THM -> 1.4s
 ```
 
 Example 13
+
+```elixir
+ctx = Context.new() |> Context.put_const("f", mk_type(:i, [mk_type(:i)]))
+
+"(![X : $i]: ((f @ X) = X)) & (p @ (^[X : $i] : X)) => (p @ (^[X : $i]: f @ X))"
+#  |> parse(ctx) |> prove |> pp_proof_result |> IO.puts
+# INC -> 11s
+```
 
 ```elixir
 {:ok, problem} = parse_string(leibnitz_eq("$i") <>
@@ -428,8 +494,8 @@ Example 13
 ((![X : $i]: (leibnitz_eq_i @ (f @ X) @ X)) & (p @ ^[X : $i] : X)) => p @ ^[X : $i]: f @ X
 ).")
 
-run_prover(problem)
-# -> timeout
+# run_prover(problem)
+# INC -> 10.8s
 ```
 
 ```elixir
@@ -439,19 +505,19 @@ thf(conj,conjecture,
 ((![X : $i]: (andrews_eq_i @ (f @ X) @ X)) & (p @ ^[X : $i] : X)) => p @ ^[X : $i]: f @ X
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# INC -> 0.1s
 ```
+
+Example 14
 
 ```elixir
 ctx = Context.new() |> Context.put_const("f", mk_type(:i, [mk_type(:i)]))
 
-"(![X : $i]: ((f @ X) = X)) & (p @ (^[X : $i] : X)) => (p @ (^[X : $i]: f @ X))"
-  |> parse(ctx)
-  |> prove
-  |> pp_proof_result |> IO.puts
+"(![X : $i]: ((f @ X) = X)) & (p @ (^[X : $i] : X)) => (p @ f)"
+#  |> parse(ctx) |> prove |> pp_proof_result |> IO.puts
+# INC -> 10.5s
 ```
-
-Example 14
 
 ```elixir
 {:ok, problem} = parse_string(leibnitz_eq("$i") <>
@@ -460,7 +526,8 @@ thf(conj,conjecture,
 ((![X : $i]: (leibnitz_eq_i @ (f @ X) @ X)) & (p @ ^[X : $i] : X)) => p @ f
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# INC -> 10.7s
 ```
 
 ```elixir
@@ -470,42 +537,50 @@ thf(conj,conjecture,
 ((![X : $i]: (andrews_eq_i @ (f @ X) @ X)) & (p @ ^[X : $i] : X)) => p @ f
 ).")
 
-run_prover(problem)
-```
-
-```elixir
-ctx = Context.new() |> Context.put_const("f", mk_type(:i, [mk_type(:i)]))
-
-"(![X : $i]: ((f @ X) = X)) & (p @ (^[X : $i] : X)) => (p @ f)"
-  |> parse(ctx) |> prove |> pp_proof_result |> IO.puts
+# run_prover(problem)
+# INC -> 96ms
 ```
 
 Example 15
 
 ```elixir
 "p @ (a & b) => p @ (b & a)"
-  |> parse |> prove |> pp_proof_result |> IO.puts
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# THM -> 2ms
 ```
 
 ```elixir
 "a & b & p @ a => p @ b"
-  |> parse |> prove |> pp_proof_result |> IO.puts
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# CSA -> 1ms
 ```
 
 Example 16
 
 ```elixir
 "p @ a & p @ b => p @ (a & b)"
-  |> parse |> prove |> pp_proof_result |> IO.puts
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# CSA -> 27ms
 ```
 
 Example 17
 
 ```elixir
-"~(a = (~a))" |> parse |> prove |> pp_proof_result |> IO.puts
+"~(a = (~a))"
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# THM -> 0ms
 ```
 
 Example 18
+
+```elixir
+ctx = Context.new()
+  |> Context.put_const("h", mk_type(:i, [mk_type(:o)]))
+
+"(h @ ((h @ $true) = (h @ $false))) = (h @ $false)"
+#  |> parse(ctx) |> prove |> pp_proof_result |> IO.puts
+# CSA -> 1ms
+```
 
 ```elixir
 {:ok, problem} = parse_string(leibnitz_eq("$i") <>
@@ -513,7 +588,8 @@ Example 18
 leibnitz_eq_i @ (h @ (leibnitz_eq_i @ (h @ $true) @ (h @ $false))) @ (h @ $false)
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# CSA -> 1ms
 ```
 
 ```elixir
@@ -523,15 +599,8 @@ thf(conj,conjecture,
 andrews_eq_i @ (h @ (andrews_eq_i @ (h @ $true) @ (h @ $false))) @ (h @ $false)
 ).")
 
-run_prover(problem)
-```
-
-```elixir
-ctx = Context.new()
-  |> Context.put_const("h", mk_type(:i, [mk_type(:o)]))
-
-"(h @ ((h @ $true) = (h @ $false))) = (h @ $false)"
-  |> parse(ctx) |> prove |> pp_proof_result |> IO.puts
+# run_prover(problem)
+# THM -> 2ms
 ```
 
 Example 19
@@ -544,17 +613,25 @@ ctx = Context.new()
   |> Context.put_const("b", mk_type(:o))
 
 "(p @ (^[X : $i]: f @ ((a @ (^[X : $i]: f @ b @ X)) & b) @ X)) => p @ (f @ (b & (a @ (f @ b))))"
-  |> parse(ctx) |> prove |> pp_proof_result |> IO.puts
+#  |> parse(ctx) |> prove |> pp_proof_result |> IO.puts
+# THM -> 1ms
 ```
 
 Example 20a)
 
 ```elixir
 "![X : $o, Y : $o]: X & Y => ~(~X | ~Y)"
-  |> parse |> prove |> pp_proof_result |> IO.puts
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# THM -> 1ms
 ```
 
 Example 20b)
+
+```elixir
+"![X : $o, Y : $o]: ((X & Y) = (~(~X | ~Y)))"
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# THM -> 2ms
+```
 
 ```elixir
 {:ok, problem} = parse_string(leibnitz_eq("$o") <>
@@ -562,7 +639,8 @@ Example 20b)
 ![X : $o, Y : $o]: leibnitz_eq_o @ (X & Y) @ (~(~X | ~Y))
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# CSA -> 3ms
 ```
 
 ```elixir
@@ -571,15 +649,17 @@ run_prover(problem)
 ![X : $o, Y : $o]: andrews_eq_o @ (X & Y) @ (~(~X | ~Y))
 ).")
 
-run_prover(problem)
-```
-
-```elixir
-"![X : $o, Y : $o]: ((X & Y) = (~(~X | ~Y)))"
-  |> parse |> prove |> pp_proof_result |> IO.puts
+# run_prover(problem)
+# THM -> 2ms
 ```
 
 Example 20c)
+
+```elixir
+"(^[U : $o, V: $o] : U & V) = (^[X : $o, Y : $o]: ~(~X | ~Y))"
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# THM -> 2ms
+```
 
 ```elixir
 {:ok, problem} = parse_string(leibnitz_eq("($o>$o>$o)") <>
@@ -587,7 +667,8 @@ Example 20c)
 leibnitz_eq_OPENoTOoTOoCLOSE @ (^[U : $o, V: $o] : U & V) @ (^[X : $o, Y : $o]: ~(~X | ~Y))
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# CSA -> 2ms
 ```
 
 ```elixir
@@ -596,15 +677,17 @@ run_prover(problem)
 andrews_eq_OPENoTOoTOoCLOSE @ (^[U : $o, V: $o] : U & V) @ (^[X : $o, Y : $o]: ~(~X | ~Y))
 ).")
 
-run_prover(problem)
-```
-
-```elixir
-"(^[U : $o, V: $o] : U & V) = (^[X : $o, Y : $o]: ~(~X | ~Y))"
-  |> parse |> prove |> pp_proof_result |> IO.puts
+# run_prover(problem)
+# THM -> 2ms
 ```
 
 Example 20d)
+
+```elixir
+"(&) = (^[X : $o, Y : $o]: ~(~X | ~Y))"
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# THM -> 2ms
+```
 
 ```elixir
 {:ok, problem} = parse_string(leibnitz_eq("($o>$o>$o)") <>
@@ -612,7 +695,8 @@ Example 20d)
 leibnitz_eq_OPENoTOoTOoCLOSE @ (&) @ (^[X : $o, Y : $o]: ~(~X | ~Y))
 ).")
 
-run_prover(problem)
+# run_prover(problem)
+# CSA -> 2ms
 ```
 
 ```elixir
@@ -621,12 +705,8 @@ run_prover(problem)
 andrews_eq_OPENoTOoTOoCLOSE @ (&) @ (^[X : $o, Y : $o]: ~(~X | ~Y))
 ).")
 
-run_prover(problem)
-```
-
-```elixir
-"(&) = (^[X : $o, Y : $o]: ~(~X | ~Y))"
-  |> parse |> prove |> pp_proof_result |> IO.puts
+# run_prover(problem)
+# THM -> 2ms
 ```
 
 Example 21
@@ -641,5 +721,7 @@ Example 21
 )
 =>
 ![Y : $o>$o]: p @ Y
-" |> parse |> prove |> pp_proof_result |> IO.puts
+"
+#  |> parse |> prove |> pp_proof_result |> IO.puts
+# CSA -> 2ms
 ```

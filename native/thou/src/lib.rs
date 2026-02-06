@@ -103,7 +103,7 @@ const COMMON_RULES: &[(&str, &str, &str)] = &[
 ];
 
 const SIMP_RULES: &[(&str, &str, &str)] = &[
-    //----- deMorgan rules -----//
+    //----- De Morgan rules -----//
     (
         "demorg-and",
         "(¬∷o⇾o (∧∷o⇾o⇾o ?a ?b))",

@@ -7,7 +7,7 @@ System.put_env("HEX_HTTP_TIMEOUT", "120")
 Mix.install([
   {:thou, path: Path.join(__DIR__, "..")},
   {:hol, "~> 1.0.2"},
-  {:behold, "~> 1.0.0"}
+  {:behold, "~> 1.1.0"}
 ])
 ```
 
@@ -35,6 +35,27 @@ alias THOU.Heuristics.NCPO
 
 Logger.configure(level: :info)
 Logger.put_application_level(:hol, :error)
+```
+
+```elixir
+ctx = Context.new()
+  |> Context.put_var("X1", type_io())
+  |> Context.put_var("X2", type_i())
+  |> Context.put_const("c1", type_iio())
+  |> Context.put_const("c2", mk_type(type_i(), [type_io()]))
+lhs = parse "X1 @ X2", ctx
+rhs = parse "~((c1 @ (c2 @ X1)) @ X2)", ctx
+
+{:unif_res_sum, [{:unif_sol, sol, []}], _} = unify({lhs, rhs})
+pp_subst(sol)
+```
+
+```elixir
+apply_subst(sol, parse("(c1 @ (c2 @ X1)) @ X2", ctx)) |> pp_term()
+```
+
+```elixir
+apply_subst(sol, parse("X1 @ X2", ctx)) |> pp_term()
 ```
 
 ## Custom Files
