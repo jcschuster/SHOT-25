@@ -531,109 +531,106 @@ defmodule THOU.Tableaux do
           definitions(),
           Parameters.t(),
           tableau_state()
-        ) ::
-          tableau_res()
+        ) :: tableau_res()
   defp branch(a, b, rest, definitions, parameters, state) do
-    tableau_state(clause: prev_clause) = state
+    {first_branch, second_branch} = order_branches(a, b, parameters)
 
+    case tableau(first_branch ++ rest, definitions, parameters, state) do
+      {:closed, unif_checkpoints} ->
+        process_second_branch(
+          unif_checkpoints,
+          second_branch,
+          rest,
+          definitions,
+          parameters,
+          state
+        )
+
+      other_result ->
+        other_result
+    end
+  end
+
+  defp order_branches(a, b, parameters) do
     a_terms = List.flatten([a])
     b_terms = List.flatten([b])
 
-    {left_side, right_side} =
-      case parameters.branch_heuristic do
-        :ncpo ->
-          if NCPO.smaller_multiset?(a_terms, b_terms) do
-            {a_terms, b_terms}
-          else
-            {b_terms, a_terms}
-          end
+    if parameters.branch_heuristic == :ncpo and NCPO.smaller_multiset?(b_terms, a_terms) do
+      {b_terms, a_terms}
+    else
+      {a_terms, b_terms}
+    end
+  end
 
-        _ ->
-          {a_terms, b_terms}
+  defp process_second_branch([], _branch, _rest, _defs, _params, _state) do
+    {:closed, []}
+  end
+
+  defp process_second_branch(solutions, branch, rest, defs, params, state) do
+    task_function = fn checkpoint ->
+      solve_continuation(checkpoint, branch, rest, defs, params, state)
+    end
+
+    results =
+      if params.max_concurrency > 1 do
+        solutions
+        |> Task.async_stream(task_function,
+          max_concurrency: params.max_concurrency,
+          ordered: false
+        )
+        |> Enum.map(fn {:ok, res} -> res end)
+      else
+        Enum.map(solutions, task_function)
       end
 
-    case tableau(left_side ++ rest, definitions, parameters, state) do
-      {:incomplete, clause, constr} ->
-        {:incomplete, clause, constr}
+    aggregate_branch_results(results)
+  end
 
-      {:open, res_clause, constr} ->
-        {:open, res_clause, constr}
+  defp solve_continuation(checkpoint, branch, rest, defs, params, state) do
+    unif_checkpoint(substs: sigma, constrs: constraints) = checkpoint
+    tableau_state(clause: gamma) = state
 
-      {:closed, unif_checkpoints} ->
-        # Option for concurrency here, as unification checkpoints can be checked in parallel
-        case unif_checkpoints do
-          [] ->
-            # closed without substitutions or constraints
-            tableau(right_side ++ rest, definitions, parameters, state)
+    new_branch = apply_subst(sigma, branch)
+    new_rest = apply_subst(sigma, rest)
+    new_gamma = apply_subst(sigma, gamma)
 
-          _ ->
-            # Try checkpoints on right branch and propagate up
-            try_checkpoint = fn unif_checkpoint(substs: substitutions, constrs: remaining) = cpt ->
-              new_rest = apply_subst(substitutions, rest)
-              new_clause = apply_subst(substitutions, prev_clause)
-              new_right_side = apply_subst(substitutions, right_side)
+    result =
+      tableau(
+        new_branch ++ new_rest,
+        defs,
+        params,
+        tableau_state(state, clause: new_gamma, constraints: constraints)
+      )
 
-              res =
-                tableau(
-                  new_right_side ++ new_rest,
-                  definitions,
-                  parameters,
-                  tableau_state(state, clause: new_clause, constraints: remaining)
-                )
+    {checkpoint, result}
+  end
 
-              {cpt, res}
-            end
+  defp aggregate_branch_results(results) do
+    results
+    |> Enum.reduce_while({:open, MapSet.new(), []}, fn {original_cp, res}, _acc ->
+      case res do
+        {:closed, new_checkpoints} ->
+          combined_checkpoints = merge_checkpoints(original_cp, new_checkpoints)
+          {:halt, {:closed, combined_checkpoints}}
 
-            results =
-              case parameters.max_concurrency do
-                1 ->
-                  Enum.map(unif_checkpoints, try_checkpoint)
+        {:incomplete, clause, constrs} ->
+          {:cont, {:incomplete, clause, constrs}}
 
-                num ->
-                  unif_checkpoints
-                  |> Task.async_stream(
-                    try_checkpoint,
-                    max_concurrency: num,
-                    timeout: :infinity,
-                    ordered: false
-                  )
-                  |> Enum.map(fn {:ok, res} -> res end)
-              end
+        {:open, clause, constrs} ->
+          {:cont, {:open, clause, constrs}}
+      end
+    end)
+  end
 
-            {new_checkpoints, last_open} =
-              results
-              |> Enum.reduce_while({[], nil}, fn {cpt, res}, {acc_cpts, acc_open} ->
-                case res do
-                  {:closed, new_cpts} ->
-                    added_cpts =
-                      if Enum.empty?(new_cpts) do
-                        [cpt]
-                      else
-                        Enum.map(new_cpts, fn unif_checkpoint(substs: new_substs) = ci ->
-                          unif_checkpoint(substs: old_substs) = cpt
+  defp merge_checkpoints(original_cp, new_checkpoints) do
+    unif_checkpoint(substs: old_substs) = original_cp
 
-                          unif_checkpoint(ci,
-                            substs: apply_subst(new_substs, old_substs) ++ new_substs
-                          )
-                        end)
-                      end
-
-                    {:halt, {acc_cpts ++ added_cpts, acc_open}}
-
-                  {:open, _, _} = open_res ->
-                    {:cont, {acc_cpts, open_res}}
-
-                  other ->
-                    {:cont, {acc_cpts, acc_open || other}}
-                end
-              end)
-
-            if new_checkpoints != [] do
-              {:closed, new_checkpoints}
-            else
-              last_open
-            end
-        end
+    if Enum.empty?(new_checkpoints) do
+      [original_cp]
+    else
+      Enum.map(new_checkpoints, fn unif_checkpoint(substs: new_substs) = c ->
+        unif_checkpoint(c, substs: apply_subst(new_substs, old_substs) ++ new_substs)
+      end)
     end
   end
 
