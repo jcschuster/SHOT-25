@@ -17,28 +17,29 @@ defmodule THOU.Data.Parameters do
 
   - `:max_concurrency`: The maximum number of threads to use for parallel
   checking of unification checkpoints. Defaults to the
-  number of available threads.
+  number of available threads (at runtime).
   """
 
   defstruct rewrite: :orient,
             branch_heuristic: :ncpo,
             max_instantiations: 4,
             unification_depth: 8,
-            max_concurrency: System.schedulers_online()
+            max_concurrency: nil
 
   @typedoc """
   The field `rewrite` specifies whether to just orient disjunction and
   conjunction symbols, use additional simplification rules or do nothing. The
   branch heuristic can be an atom or `nil` if no heuristic should be used. The
   maximum instantiations of a quantifier, the unification depth and the maximum
-  number of threads to use for parallelization is a positive integer.
+  number of threads to use for parallelization is a positive integer. `nil`
+  corresponds to all available schedulers.
   """
   @type t() :: %__MODULE__{
           rewrite: :simplify | :orient | nil,
           branch_heuristic: atom() | nil,
           max_instantiations: pos_integer(),
           unification_depth: pos_integer(),
-          max_concurrency: pos_integer()
+          max_concurrency: pos_integer() | nil
         }
 
   @doc """
@@ -47,24 +48,7 @@ defmodule THOU.Data.Parameters do
   """
   @spec new(Keyword.t()) :: t()
   def new(opts \\ []) do
-    default_params = %__MODULE__{}
-
-    rewrite = Keyword.get(opts, :rewrite, default_params.rewrite)
-    branch_heuristic = Keyword.get(opts, :branch_heuristic, default_params.branch_heuristic)
-
-    max_instantiations =
-      Keyword.get(opts, :max_instantiations, default_params.max_instantiations)
-
-    unification_depth = Keyword.get(opts, :unification_depth, default_params.unification_depth)
-
-    max_concurrency = Keyword.get(opts, :max_concurrency, default_params.max_concurrency)
-
-    %__MODULE__{
-      rewrite: rewrite,
-      branch_heuristic: branch_heuristic,
-      max_instantiations: max_instantiations,
-      unification_depth: unification_depth,
-      max_concurrency: max_concurrency
-    }
+    params = struct!(%__MODULE__{}, opts)
+    %{params | max_concurrency: params.max_concurrency || System.schedulers_online()}
   end
 end
