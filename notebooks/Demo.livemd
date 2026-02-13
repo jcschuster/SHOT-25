@@ -28,7 +28,7 @@ Logger.configure(level: :error)
 ## Parsing TPTP
 
 ```elixir
-"P => P | q" |> parse |> prove
+"P => P | q" |> parse |> prove |> PP.pp_proof_result |> IO.puts
 ```
 
 ```elixir
@@ -43,7 +43,7 @@ ctx = Context.new()
 ```
 
 ```elixir
-"P | q <= P <~> q" |> parse |> TPTP.term_to_tptp()
+"P | q <= P <~> q" |> parse |> TPTP.term_to_tptp
 ```
 
 ```elixir
@@ -63,7 +63,7 @@ ctx = Context.new()
 ```elixir
 axiom_terms = Enum.map(problem.axioms, fn {_name, term} -> term end)
 {name, conjecture} = problem.conjecture
-prove(conjecture, axiom_terms) |> PP.pp_proof_result
+prove(conjecture, axiom_terms) |> PP.pp_proof_result |> IO.puts
 ```
 
 ```elixir
@@ -79,14 +79,14 @@ TPTP.term_to_tptp formula
 leibnitz = "![P : $i > $o]: (P @ X) => (P @ Y)"
 andrews  = "![Q : $i > $i > $o]: (![Z: $i]: Q @ Z @ Z) => Q @ X @ Y"
 
-parse("(#{leibnitz}) <=> (#{andrews})") |> prove |> PP.pp_proof_result
+parse("(#{leibnitz}) <=> (#{andrews})") |> prove |> PP.pp_proof_result |> IO.puts
 ```
 
 ## Cantor's Surjective Theorem
 
 ```elixir
 surj_cantor = "~ ?[F : $i > $i > $o]: ![Y : $i > $o]: ?[X : $i]: ((F @ X) = Y)" |> parse
-prove(surj_cantor) |> PP.pp_proof_result
+prove(surj_cantor) |> PP.pp_proof_result |> IO.puts
 ```
 
 ## Proving TPTP Problems
@@ -98,11 +98,19 @@ prove_file("Problems/ALG/ALG001^5.p")  # Rating: 0.00
 ## Need for Extensionality Principles
 
 ```elixir
-"p @ a & p @ b => p @ (a & b)" |> parse |> prove |> PP.pp_proof_result
+"p @ a & p @ b => p @ (a & b)"
+  |> parse
+  |> prove
+  |> PP.pp_proof_result
+  |> IO.puts
 ```
 
 ```elixir
-"(![P : $o>$o]: ((P @ (a & b)) => (P @ (b & a))))" |> parse |> prove |> PP.pp_proof_result
+"(![P : $o>$o]: ((P @ (a & b)) => (P @ (b & a))))"
+  |> parse
+  |> prove
+  |> PP.pp_proof_result
+  |> IO.puts
 ```
 
 ```elixir
@@ -112,6 +120,7 @@ prove_file("Problems/ALG/ALG001^5.p")  # Rating: 0.00
   |> parse
   |> prove
   |> PP.pp_proof_result
+  |> IO.puts
 ```
 
 ```elixir
@@ -136,20 +145,23 @@ prove_file("Problems/ALG/ALG001^5.p")  # Rating: 0.00
   |> parse
   |> prove
   |> PP.pp_proof_result
+  |> IO.puts
 ```
 
 ```elixir
 "(![X : $o]: (![Y : $o]: ((X <=> Y) <= (![P : $o > $o]: ((P @ X) => (P @ Y))))))"
- |> parse
- |> prove
- |> PP.pp_proof_result
+  |> parse
+  |> prove
+  |> PP.pp_proof_result
+  |> IO.puts
 ```
 
 ```elixir
 "(![X : $o]: (![Y : $o]: ((X <=> Y) => (![P : $o > $o]: ((P @ X) => (P @ Y))))))"
- |> parse
- |> prove
- |> PP.pp_proof_result
+  |> parse
+  |> prove
+  |> PP.pp_proof_result
+  |> IO.puts
 ```
 
 ```elixir
@@ -161,4 +173,5 @@ prove_file("Problems/ALG/ALG001^5.p")  # Rating: 0.00
   |> parse
   |> prove
   |> PP.pp_proof_result
+  |> IO.puts
 ```
