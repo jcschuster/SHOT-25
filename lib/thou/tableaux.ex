@@ -576,7 +576,8 @@ defmodule THOU.Tableaux do
         solutions
         |> Task.async_stream(task_function,
           max_concurrency: params.max_concurrency,
-          ordered: false
+          ordered: false,
+          timeout: :infinity
         )
         |> Enum.map(fn {:ok, res} -> res end)
       else

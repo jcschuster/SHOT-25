@@ -20,9 +20,9 @@ import BeHOLd.ClassicalHOL.Definitions
 alias BeHOLd.Data.{Context, Problem}
 alias BeHOLd.TPTP
 import THOU
+alias THOU.PrettyPrint, as: PP
 
-Logger.configure(level: :info)
-Logger.put_application_level(:hol, :error)
+Logger.configure(level: :error)
 ```
 
 ## Parsing TPTP
@@ -63,7 +63,7 @@ ctx = Context.new()
 ```elixir
 axiom_terms = Enum.map(problem.axioms, fn {_name, term} -> term end)
 {name, conjecture} = problem.conjecture
-prove(conjecture, axiom_terms)
+prove(conjecture, axiom_terms) |> PP.pp_proof_result
 ```
 
 ```elixir
@@ -79,34 +79,30 @@ TPTP.term_to_tptp formula
 leibnitz = "![P : $i > $o]: (P @ X) => (P @ Y)"
 andrews  = "![Q : $i > $i > $o]: (![Z: $i]: Q @ Z @ Z) => Q @ X @ Y"
 
-parse("(#{leibnitz}) <=> (#{andrews})") |> prove
+parse("(#{leibnitz}) <=> (#{andrews})") |> prove |> PP.pp_proof_result
 ```
 
 ## Cantor's Surjective Theorem
 
 ```elixir
 surj_cantor = "~ ?[F : $i > $i > $o]: ![Y : $i > $o]: ?[X : $i]: ((F @ X) = Y)" |> parse
-prove surj_cantor
+prove(surj_cantor) |> PP.pp_proof_result
 ```
 
 ## Proving TPTP Problems
 
 ```elixir
-prove_file "Problems/ALG/ALG001^5.p"  # Rating: 0.00
+prove_file("Problems/ALG/ALG001^5.p")  # Rating: 0.00
 ```
 
 ## Need for Extensionality Principles
 
 ```elixir
-"p @ a & p @ b => p @ (a & b)" |> parse |> prove
+"p @ a & p @ b => p @ (a & b)" |> parse |> prove |> PP.pp_proof_result
 ```
 
 ```elixir
-"(![P : $o>$o]: ((P @ (a & b)) => (P @ (b & a))))" |> parse |> prove
-```
-
-```elixir
-"$true & $true = $true" |> parse
+"(![P : $o>$o]: ((P @ (a & b)) => (P @ (b & a))))" |> parse |> prove |> PP.pp_proof_result
 ```
 
 ```elixir
@@ -115,6 +111,7 @@ prove_file "Problems/ALG/ALG001^5.p"  # Rating: 0.00
 "
   |> parse
   |> prove
+  |> PP.pp_proof_result
 ```
 
 ```elixir
@@ -138,18 +135,21 @@ prove_file "Problems/ALG/ALG001^5.p"  # Rating: 0.00
 "
   |> parse
   |> prove
+  |> PP.pp_proof_result
 ```
 
 ```elixir
 "(![X : $o]: (![Y : $o]: ((X <=> Y) <= (![P : $o > $o]: ((P @ X) => (P @ Y))))))"
  |> parse
  |> prove
+ |> PP.pp_proof_result
 ```
 
 ```elixir
 "(![X : $o]: (![Y : $o]: ((X <=> Y) => (![P : $o > $o]: ((P @ X) => (P @ Y))))))"
  |> parse
  |> prove
+ |> PP.pp_proof_result
 ```
 
 ```elixir
@@ -160,5 +160,5 @@ prove_file "Problems/ALG/ALG001^5.p"  # Rating: 0.00
 "
   |> parse
   |> prove
-  # runs for a long time...
+  |> PP.pp_proof_result
 ```
