@@ -2,7 +2,7 @@ defmodule THOU.Prover do
   @moduledoc """
   Main entry point to the prover. Contains a `sat/3` and a `prove/4` function
   to satisfy or prove HOL formulas. The heart of the prover is
-  `THOU.Tableaux.tableaux/3`, which describes a tableaux procedure to satisfy a
+  `THOU.Tableaux.tableau/3`, which describes a tableau procedure to satisfy a
   given set of formulas. A formula is proven by negating it and showing that no
   model can be found for this negation.
   """
@@ -22,7 +22,7 @@ defmodule THOU.Prover do
     a satisfying assignment with corresponding constraints.
 
   - `{:unsat, :closed}` means that the formulas are unsatisfiable because every
-    branch of the tableaux closed.
+    branch of the tableau closed.
 
   - `{:unknown, partial_model, reason}` where reason can be `:incomplete` or
     `:timeout`. In case of `:incomplete`, a partial model is returned, which is
@@ -42,37 +42,23 @@ defmodule THOU.Prover do
   Tries to satisfy a given formula or list of formulas with respect to the
   given definitions. Returns a `sat_result` describing one of three outcomes.
 
-  Internally relies on the `THOU.Tableaux.tableaux/3` function as model finder.
+  Internally relies on the `THOU.Tableaux.tableau/3` function as model finder.
 
   Parameters that can be given in the `opts` field are a `:timeout` in
   milliseconds, which defaults to 30s and all technical parameters of
-  `THOU.Tableaux.tableaux/3`.
+  `THOU.Tableaux.tableau/3`.
   """
   @spec sat(HOL.Data.hol_term() | [HOL.Data.hol_term()], definitions(), Keyword.t()) ::
           sat_result()
   def sat(formulas, definitions \\ %{}, opts \\ [])
 
   def sat(formulas, definitions, opts) when is_list(formulas) do
-    default_params = Parameters.new()
-
-    timeout = Keyword.get(opts, :timeout, 30_000)
-    rewrite = Keyword.get(opts, :rewrite, default_params.rewrite)
-    branch_heuristic = Keyword.get(opts, :branch_heuristic, default_params.branch_heuristic)
-    max_instantiations = Keyword.get(opts, :max_instantiations, default_params.max_instantiations)
-    unification_depth = Keyword.get(opts, :unification_depth, default_params.unification_depth)
+    {timeout, prover_opts} = Keyword.pop(opts, :timeout, 30_000)
+    params = Parameters.new(prover_opts)
 
     task =
       Task.async(fn ->
-        tableau(
-          formulas,
-          definitions,
-          Parameters.new(
-            canonicalize: rewrite,
-            branch_heuristic: branch_heuristic,
-            max_instantiations: max_instantiations,
-            unification_depth: unification_depth
-          )
-        )
+        tableau(formulas, definitions, params)
       end)
 
     case Task.yield(task, timeout) do
@@ -91,13 +77,13 @@ defmodule THOU.Prover do
   @doc """
   Tries to proof a given term based on the given assumptions and definitions by
   showing that there is no couterexample for its negation, i.e., that
-  `THOU.Tableaux.tableaux/3` can close all branches. Returns a `proof_result`
+  `THOU.Tableaux.tableau/3` can close all branches. Returns a `proof_result`
   describing the output, which can be pretty-printed with a call to
   `THOU.PrettyPrint.pp_proof_result/1`.
 
   Parameters that can be given in the `opts` field are a timeout in
   milliseconds (defaults to 30s) and all technical parameters of
-  `THOU.Tableaux.tableaux/3`.
+  `THOU.Tableaux.tableau/3`.
   """
   @spec prove(HOL.Data.hol_term(), [HOL.Data.hol_term()], definitions(), Keyword.t()) ::
           proof_result()

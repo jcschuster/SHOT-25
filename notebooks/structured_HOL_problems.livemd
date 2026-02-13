@@ -7,7 +7,7 @@ System.put_env("HEX_HTTP_TIMEOUT", "120")
 Mix.install([
   {:thou, path: Path.join(__DIR__, "..")},
   {:behold, "~> 1.1.0"},
-  {:kino, "~> 0.17.0"}
+  {:kino, "~> 0.17.0
 ])
 ```
 

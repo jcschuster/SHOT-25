@@ -1,8 +1,12 @@
 # THOU Demo
 
 ```elixir
+System.put_env("HEX_HTTP_CONCURRENCY", "1")
+System.put_env("HEX_HTTP_TIMEOUT", "120")
+
 Mix.install([
-  {:hol, "1.0.2"},
+  {:hol, "~> 1.0.2"},
+  {:behold, "~> 1.1.1"},
   {:thou, path: Path.join(__DIR__, "..")}
 ])
 ```
@@ -10,10 +14,12 @@ Mix.install([
 ## Setup
 
 ```elixir
-import THOU.{Prover, Parser.Parser, HOL.Definitions}
 import HOL.Data
-alias THOU.Runner
-alias THOU.Parser.{Parser.Context, TPTP}
+import BeHOLd.Parser
+import BeHOLd.ClassicalHOL.Definitions
+alias BeHOLd.Data.{Context, Problem}
+alias BeHOLd.TPTP
+import THOU
 
 Logger.configure(level: :info)
 Logger.put_application_level(:hol, :error)
@@ -62,7 +68,7 @@ prove(conjecture, axiom_terms)
 
 ```elixir
 {:ok, problem} = TPTP.parse_file "Problems/ALG/ALG001^5.p"
-%TPTP.Problem{conjecture: {_name, formula}} = problem
+%Problem{conjecture: {_name, formula}} = problem
 
 TPTP.term_to_tptp formula
 ```
@@ -86,7 +92,7 @@ prove surj_cantor
 ## Proving TPTP Problems
 
 ```elixir
-Runner.prove_file "Problems/ALG/ALG001^5.p"  # Rating: 0.00
+prove_file "Problems/ALG/ALG001^5.p"  # Rating: 0.00
 ```
 
 ## Need for Extensionality Principles
