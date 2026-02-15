@@ -21,7 +21,8 @@ defmodule THOU.Tableaux do
   still not provable.
   """
 
-  use THOU.Tableaux.RuleMacros
+  require Logger
+  require Record
   import HOL.Data
   import HOL.Terms
   import HOL.Unification
@@ -30,10 +31,9 @@ defmodule THOU.Tableaux do
   import THOU.Util
   import THOU.PrettyPrint
   alias THOU.Preprocessing.Rewriting
-  alias THOU.Heuristics.NCPO
+  alias THOU.Tableaux.Branching
   alias THOU.Data.Parameters
-  require Logger
-  require Record
+  use THOU.Tableaux.RuleMacros
 
   @doc group: :Internals
   @doc """
@@ -83,11 +83,14 @@ defmodule THOU.Tableaux do
             inst_count: %{HOL.Data.hol_term() => pos_integer()}
           )
 
-  @typep unif_checkpoint() ::
-           record(:unif_checkpoint,
-             substs: [HOL.Data.substitution()],
-             constrs: [HOL.Data.Unification.term_pair()]
-           )
+  @typedoc """
+  Represents a checkpoint for unification, i.e., a pre-unifier.
+  """
+  @type unif_checkpoint() ::
+          record(:unif_checkpoint,
+            substs: [HOL.Data.substitution()],
+            constrs: [HOL.Data.Unification.term_pair()]
+          )
 
   @typedoc """
   The tableau have one of three possible outcomes, which are tuples containing
@@ -254,7 +257,6 @@ defmodule THOU.Tableaux do
   #############################################################################
 
   defatomic(negated(_), :neg)
-
   defatomic(_, :pos)
 
   #############################################################################
@@ -328,61 +330,30 @@ defmodule THOU.Tableaux do
           Parameters.t(),
           tableau_state()
         ) :: tableau_res()
-  defp branch(a, b, rest, definitions, parameters, state) do
-    {first_branch, second_branch} = order_branches(a, b, parameters)
+  defp branch(a, b, rest, defs, params, state) do
+    {first, second} = Branching.order(a, b, params.branch_heuristic)
 
-    case tableau(first_branch ++ rest, definitions, parameters, state) do
-      {:closed, unif_checkpoints} ->
-        process_second_branch(
-          unif_checkpoints,
-          second_branch,
-          rest,
-          definitions,
-          parameters,
-          state
+    case tableau(first ++ rest, defs, params, state) do
+      {:closed, solutions} ->
+        Branching.or_branch(
+          solutions,
+          params,
+          &solve_continuation(&1, second, rest, defs, params, state)
         )
 
-      other_result ->
-        other_result
+      other ->
+        other
     end
   end
 
-  defp order_branches(a, b, parameters) do
-    a_terms = List.flatten([a])
-    b_terms = List.flatten([b])
-
-    if parameters.branch_heuristic == :ncpo and NCPO.smaller_multiset?(b_terms, a_terms) do
-      {b_terms, a_terms}
-    else
-      {a_terms, b_terms}
-    end
-  end
-
-  defp process_second_branch([], _branch, _rest, _defs, _params, _state) do
-    {:closed, []}
-  end
-
-  defp process_second_branch(solutions, branch, rest, defs, params, state) do
-    task_function = fn checkpoint ->
-      solve_continuation(checkpoint, branch, rest, defs, params, state)
-    end
-
-    results =
-      if params.max_concurrency > 1 do
-        solutions
-        |> Task.async_stream(task_function,
-          max_concurrency: params.max_concurrency,
-          ordered: false,
-          timeout: :infinity
-        )
-        |> Enum.map(fn {:ok, res} -> res end)
-      else
-        Enum.map(solutions, task_function)
-      end
-
-    aggregate_branch_results(results)
-  end
-
+  @spec solve_continuation(
+          unif_checkpoint(),
+          [HOL.Data.hol_term()],
+          [HOL.Data.hol_term()],
+          definitions(),
+          Parameters.t(),
+          tableau_state()
+        ) :: {unif_checkpoint(), tableau_res()}
   defp solve_continuation(checkpoint, branch, rest, defs, params, state) do
     unif_checkpoint(substs: sigma, constrs: constraints) = checkpoint
     tableau_state(clause: gamma) = state
@@ -400,35 +371,6 @@ defmodule THOU.Tableaux do
       )
 
     {checkpoint, result}
-  end
-
-  defp aggregate_branch_results(results) do
-    results
-    |> Enum.reduce_while({:open, MapSet.new(), []}, fn {original_cp, res}, _acc ->
-      case res do
-        {:closed, new_checkpoints} ->
-          combined_checkpoints = merge_checkpoints(original_cp, new_checkpoints)
-          {:halt, {:closed, combined_checkpoints}}
-
-        {:incomplete, clause, constrs} ->
-          {:cont, {:incomplete, clause, constrs}}
-
-        {:open, clause, constrs} ->
-          {:cont, {:open, clause, constrs}}
-      end
-    end)
-  end
-
-  defp merge_checkpoints(original_cp, new_checkpoints) do
-    unif_checkpoint(substs: old_substs) = original_cp
-
-    if Enum.empty?(new_checkpoints) do
-      [original_cp]
-    else
-      Enum.map(new_checkpoints, fn unif_checkpoint(substs: new_substs) = c ->
-        unif_checkpoint(c, substs: apply_subst(new_substs, old_substs) ++ new_substs)
-      end)
-    end
   end
 
   @spec unify_with_literals(

@@ -17,20 +17,35 @@ defmodule THOU.Heuristics.NCPOParameters do
 
   @spec precedence(binary()) :: non_neg_integer()
   def precedence(name) do
-    cond do
-      name in ["⊤", "⊥"] -> 1
-      name == "¬" -> 2
-      name in ["∨", "∧"] -> 3
-      name == "⊃" -> 4
-      name == "≡" -> 5
-      name == "=" -> 6
-      name in ["Π", "Σ"] -> 7
-      # Skolem-constants
-      String.starts_with?(name, "__sk_") -> 8
-      # User-defined constants
-      true -> 1
+    case symbol_precedence_map()[name] do
+      nil ->
+        if String.starts_with?(name, "__sk_") do
+          8
+        else
+          user_constant_precedence()
+        end
+
+      precedence_value ->
+        precedence_value
     end
   end
+
+  defp symbol_precedence_map do
+    %{
+      "⊤" => 1,
+      "⊥" => 1,
+      "¬" => 2,
+      "∨" => 3,
+      "∧" => 3,
+      "⊃" => 4,
+      "≡" => 5,
+      "=" => 6,
+      "Π" => 7,
+      "Σ" => 7
+    }
+  end
+
+  defp user_constant_precedence, do: 1
 
   @spec status(binary()) :: :lex | :mul
   def status(name) do
