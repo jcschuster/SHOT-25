@@ -88,7 +88,7 @@ defmodule THOU.Prover do
   @spec prove(HOL.Data.hol_term(), [HOL.Data.hol_term()], definitions(), Keyword.t()) ::
           proof_result()
   def prove(conclusion, assumptions \\ [], definitions \\ %{}, opts \\ []) do
-    neg_conclusion = sem_negate(conclusion)
+    neg_conclusion = negate(conclusion)
 
     case sat([neg_conclusion | assumptions], definitions, opts) do
       {:unsat, _} -> {:valid, :proven}

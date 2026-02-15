@@ -37,36 +37,72 @@ defmodule THOU.Util do
   end
 
   @doc """
-  Negates the given term or every term in the given collection by prefixing it
-  with a negation symbol.
+  Generates a term stating that `a` and `b` are Leibniz equal. Note that
+  Leibniz equality is stated in terms of equivalence.
   """
-  @spec syn_negate(t) :: t when t: term_or_collection()
-  def syn_negate(term_or_collection)
+  @spec mk_leibnitz_equality(HOL.Data.hol_term(), HOL.Data.hol_term()) :: HOL.Data.hol_term()
+  def mk_leibnitz_equality(hol_term(type: t) = a, hol_term(type: t) = b) do
+    p_var = mk_uniqe_var(mk_type(:o, [t]))
+    p_term = mk_term(p_var)
 
-  def syn_negate(clause) when is_list(clause) do
-    Enum.map(clause, fn t -> syn_negate(t) end)
+    lhs = mk_appl_term(p_term, a)
+    rhs = mk_appl_term(p_term, b)
+    inner_equiv = equivalent_term() |> mk_appl_term(lhs) |> mk_appl_term(rhs)
+
+    pi_term(mk_type(:o, [t])) |> mk_appl_term(mk_abstr_term(inner_equiv, p_var))
   end
 
-  def syn_negate(clause) when is_struct(clause, MapSet) do
-    MapSet.new(clause, fn t -> syn_negate(t) end)
-  end
+  @doc """
+  Generates a term stating that `a` and `b` are equal in their extensions.
+  """
+  @spec mk_ext_equality(HOL.Data.hol_term(), HOL.Data.hol_term()) :: HOL.Data.hol_term()
+  def mk_ext_equality(
+        hol_term(type: type(goal: g, args: [at | ats])) = a,
+        hol_term(type: type(goal: g, args: [at | ats])) = b
+      ) do
+    goal_type = mk_type(g, ats)
 
-  def syn_negate(hol_term(bvars: [], type: type_o()) = term), do: mk_appl_term(neg_term(), term)
+    x = mk_uniqe_var(at)
+    x_term = mk_term(x)
+
+    a_x = mk_appl_term(a, x_term)
+    b_x = mk_appl_term(b, x_term)
+
+    inner_eq = equals_term(goal_type) |> mk_appl_term(a_x) |> mk_appl_term(b_x)
+
+    pi_term(at) |> mk_appl_term(mk_abstr_term(inner_eq, x))
+  end
 
   @doc """
   Negates the given term or every term in the given collection by prefixing it
-  with a negation symbol and eliminating a possibley introduced double
-  negation.
+  with a negation symbol.
   """
-  @spec sem_negate(t) :: t when t: term_or_collection()
+  @spec negate(t) :: t when t: term_or_collection()
+  def negate(term_or_collection)
 
-  def sem_negate(clause) when is_map(clause) or is_list(clause) do
-    Enum.map(clause, fn t -> sem_negate(t) end)
+  def negate(clause) when is_list(clause) do
+    Enum.map(clause, fn t -> negate(t) end)
   end
 
-  def sem_negate(hol_term(bvars: [], head: neg_const(), args: [term])), do: term
+  def negate(clause) when is_struct(clause, MapSet) do
+    MapSet.new(clause, fn t -> negate(t) end)
+  end
 
-  def sem_negate(hol_term(bvars: [], type: type_o()) = term), do: mk_appl_term(neg_term(), term)
+  def negate(hol_term(bvars: [], type: type_o()) = term), do: mk_appl_term(neg_term(), term)
+
+  @doc """
+  Negates the given term or every term in the given collection by removing a
+  negation symbol at head position if present and adding it otherwise.
+  """
+  @spec lit_negate(t) :: t when t: term_or_collection()
+
+  def lit_negate(clause) when is_map(clause) or is_list(clause) do
+    Enum.map(clause, fn t -> lit_negate(t) end)
+  end
+
+  def lit_negate(hol_term(bvars: [], head: neg_const(), args: [term])), do: term
+
+  def lit_negate(hol_term(bvars: [], type: type_o()) = term), do: mk_appl_term(neg_term(), term)
 
   @doc """
   Applies a list of substitutions to the given term, pair of terms, collection

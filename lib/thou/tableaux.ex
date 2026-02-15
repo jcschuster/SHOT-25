@@ -21,6 +21,7 @@ defmodule THOU.Tableaux do
   still not provable.
   """
 
+  use THOU.Tableaux.RuleMacros
   import HOL.Data
   import HOL.Terms
   import HOL.Unification
@@ -133,7 +134,7 @@ defmodule THOU.Tableaux do
   end
 
   def tableau([current_formula | rest], definitions, parameters, state) do
-    tableau_state(clause: clause, inst_count: inst_count) = state
+    tableau_state(clause: clause) = state
 
     "Processing formula #{PrettyPrint.pp_term(current_formula)}" |> Logger.notice()
 
@@ -144,326 +145,121 @@ defmodule THOU.Tableaux do
     clause_pp = Enum.map(clause, &PrettyPrint.pp_term/1) |> inspect()
     ("Clause: " <> clause_pp) |> Logger.info()
 
-    case formula do
-      #########################################################################
-      # BOOLEAN CONSTANTS
-      #########################################################################
-
-      true_term() ->
-        Logger.notice("applying \"⊤\"")
-        tableau(rest, definitions, parameters, state)
-
-      negated(true_term()) ->
-        Logger.notice("applying \"¬⊤\" (closing branch)")
-        {:closed, []}
-
-      false_term() ->
-        Logger.notice("applying \"⊥\" (closing branch)")
-        {:closed, []}
-
-      negated(false_term()) ->
-        Logger.notice("applying \"¬⊥\"")
-        tableau(rest, definitions, parameters, state)
-
-      #########################################################################
-      # ATOMS
-      #########################################################################
-
-      # atomic formula with free variable head
-      hol_term(head: declaration(kind: :fv), type: type_o()) ->
-        Logger.notice("applying \"Atom\"")
-        handle_atom(formula, :pos, rest, definitions, parameters, state)
-
-      # negated atomic formula with free variable head
-      negated(hol_term(head: declaration(kind: :fv))) ->
-        Logger.notice("applying \"Atom\"")
-        handle_atom(formula, :neg, rest, definitions, parameters, state)
-
-      # non-unfolded definition
-      hol_term(head: declaration(kind: :co, name: name), args: args, type: type_o())
-      when is_map_key(definitions, name) ->
-        Logger.notice("unfolding definition for \"#{name}\"")
-
-        equality(_id, def_body) = Map.get(definitions, name)
-
-        unfolded_term =
-          Enum.reduce(args, def_body, fn arg, acc ->
-            mk_appl_term(acc, arg)
-          end)
-
-        tableau([unfolded_term | rest], definitions, parameters, state)
-
-      # negated non-unfolded definition
-      negated(hol_term(head: declaration(kind: :co, name: name), args: args))
-      when is_map_key(definitions, name) ->
-        Logger.notice("unfolding negated definition for \"#{name}\"")
-
-        equality(_id, def_body) = Map.get(definitions, name)
-
-        unfolded_inner =
-          Enum.reduce(args, def_body, fn arg, acc ->
-            mk_appl_term(acc, arg)
-          end)
-
-        tableau([syn_negate(unfolded_inner) | rest], definitions, parameters, state)
-
-      # atomic formula with constant as head (no logical connective)
-      hol_term(head: declaration(kind: :co, name: name), type: type_o())
-      when name not in signature_symbols() ->
-        Logger.notice("applying \"Atom\"")
-        handle_atom(formula, :pos, rest, definitions, parameters, state)
-
-      # negated atomic formula with constant as head (no logical connective)
-      negated(hol_term(head: declaration(kind: :co, name: name)))
-      when name not in signature_symbols() ->
-        Logger.notice("applying \"Atom\"")
-        handle_atom(formula, :neg, rest, definitions, parameters, state)
-
-      #########################################################################
-      # DOUBLE NEGATION
-      #########################################################################
-
-      # double negation
-      negated(negated(a)) ->
-        Logger.notice("applying \"¬¬\"")
-        tableau([a | rest], definitions, parameters, state)
-
-      #########################################################################
-      # EQUALITY
-      #########################################################################
-
-      ############################## REFLEXIVITY ##############################
-
-      # reflexivity of equality -> a=a is always true
-      equality(a, a) ->
-        Logger.notice("applying \"=r\"")
-        tableau(rest, definitions, parameters, state)
-
-      # negated equality -> ¬(a=a) is always false
-      negated(equality(a, a)) ->
-        Logger.notice("applying \"¬=r\"")
-        {:closed, []}
-
-      ######################### TYPED EQUALITY SYMBOLS ########################
-
-      # equality (type o) -> transform to equivalence
-      typed_equality(a, b, type_o()) ->
-        Logger.notice("applying \"=o\"")
-        equiv = equivalent_term() |> mk_appl_term(a) |> mk_appl_term(b)
-        tableau([equiv | rest], definitions, parameters, state)
-
-      # negated equality (type o)
-      negated(typed_equality(a, b, type_o())) ->
-        Logger.notice("applying \"¬=o\"")
-        eq = equivalent_term() |> mk_appl_term(a) |> mk_appl_term(b)
-        neg_eq = neg_term() |> mk_appl_term(eq)
-        tableau([neg_eq | rest], definitions, parameters, state)
-
-      # equality (other atomic types) -> Leibnitz equality
-      typed_equality(a, b, type(goal: g, args: [])) when is_atom(g) ->
-        t = type(goal: g, args: [])
-
-        if unknown_type?(t) do
-          Logger.notice("applying \"Atom\"")
-          handle_atom(formula, :pos, rest, definitions, parameters, state)
-        else
-          Logger.notice("applying \"=ι\"")
-
-          p = mk_uniqe_var(mk_type(:o, [t]))
-          p_term = mk_term(p)
-          p_a = mk_appl_term(p_term, a)
-          p_b = mk_appl_term(p_term, b)
-          pi = pi_const(mk_type(:o, [t])) |> mk_term()
-
-          inner_equiv = equivalent_term() |> mk_appl_term(p_a) |> mk_appl_term(p_b)
-          abstr = inner_equiv |> mk_abstr_term(p)
-          quant = pi |> mk_appl_term(abstr)
-
-          tableau([quant | rest], definitions, parameters, state)
-        end
-
-      # negated equality (other atomic types) -> negated Leibnitz equality
-      negated(typed_equality(a, b, type(goal: g, args: []))) when is_atom(g) ->
-        t = type(goal: g, args: [])
-
-        if unknown_type?(t) do
-          Logger.notice("applying \"Atom\"")
-          handle_atom(formula, :neg, rest, definitions, parameters, state)
-        else
-          Logger.notice("applying \"¬=ι\"")
-
-          p = mk_uniqe_var(mk_type(:o, [t]))
-          p_term = mk_term(p)
-          p_a = mk_appl_term(p_term, a)
-          p_b = mk_appl_term(p_term, b)
-          pi = pi_const(mk_type(:o, [t])) |> mk_term()
-
-          inner_equiv = equivalent_term() |> mk_appl_term(p_a) |> mk_appl_term(p_b)
-          abstr = inner_equiv |> mk_abstr_term(p)
-          quant = pi |> mk_appl_term(abstr)
-          neg_quant = neg_term() |> mk_appl_term(quant)
-
-          tableau([neg_quant | rest], definitions, parameters, state)
-        end
-
-      # equality (function types) -> functional extensionality
-      typed_equality(a, b, type) ->
-        Logger.notice("applying \"=(α⇾β)\"")
-        [first_arg_type | rest_arg_types] = get_arg_types(type)
-        goal_type = mk_type(get_goal_type(type), rest_arg_types)
-        x = mk_uniqe_var(first_arg_type)
-        x_term = mk_term(x)
-        a_x = mk_appl_term(a, x_term)
-        b_x = mk_appl_term(b, x_term)
-        equals_term = mk_term(equals_const(goal_type))
-        pi = pi_const(first_arg_type) |> mk_term()
-
-        inner_equality = equals_term |> mk_appl_term(a_x) |> mk_appl_term(b_x)
-        abstr = inner_equality |> mk_abstr_term(x)
-        quant = pi |> mk_appl_term(abstr)
-
-        tableau([quant | rest], definitions, parameters, state)
-
-      # negated equality (function types) -> negated functional extensionality
-      negated(typed_equality(a, b, type)) ->
-        Logger.notice("applying \"¬=(α⇾β)\"")
-        [first_arg_type | rest_arg_types] = get_arg_types(type)
-        goal_type = mk_type(get_goal_type(type), rest_arg_types)
-        x = mk_uniqe_var(first_arg_type)
-        x_term = mk_term(x)
-        a_x = mk_appl_term(a, x_term)
-        b_x = mk_appl_term(b, x_term)
-        equals_term = mk_term(equals_const(goal_type))
-        pi = pi_const(first_arg_type) |> mk_term()
-
-        inner_equality = equals_term |> mk_appl_term(a_x) |> mk_appl_term(b_x)
-        abstr = inner_equality |> mk_abstr_term(x)
-        quant = pi |> mk_appl_term(abstr)
-        neg_quant = neg_term() |> mk_appl_term(quant)
-
-        tableau([neg_quant | rest], definitions, parameters, state)
-
-      #########################################################################
-      # LOGICAL CONNECTIVES
-      #########################################################################
-
-      # disjunction
-      disjunction(a, b) ->
-        Logger.notice("applying \"∨\"")
-        branch(a, b, rest, definitions, parameters, state)
-
-      # negated disjunction
-      negated(disjunction(a, b)) ->
-        Logger.notice("applying \"¬∨\"")
-        tableau([sem_negate(a), sem_negate(b) | rest], definitions, parameters, state)
-
-      # conjunction
-      conjunction(a, b) ->
-        Logger.notice("applying \"∧\"")
-        tableau([a, b | rest], definitions, parameters, state)
-
-      # negated conjunction
-      negated(conjunction(a, b)) ->
-        Logger.notice("applying \"¬∧\"")
-        branch(sem_negate(a), sem_negate(b), rest, definitions, parameters, state)
-
-      # implication
-      implication(a, b) ->
-        Logger.notice("applying \"⊃\"")
-        branch(sem_negate(a), b, rest, definitions, parameters, state)
-
-      # negated implication
-      negated(implication(a, b)) ->
-        Logger.notice("applying \"¬⊃\"")
-        tableau([a, sem_negate(b) | rest], definitions, parameters, state)
-
-      # equivalence
-      equivalence(a, b) ->
-        Logger.notice("applying \"≡\"")
-        branch([a, b], [sem_negate(a), sem_negate(b)], rest, definitions, parameters, state)
-
-      # negated equivalence
-      negated(equivalence(a, b)) ->
-        Logger.notice("applying \"¬≡\"")
-        branch([sem_negate(a), b], [a, sem_negate(b)], rest, definitions, parameters, state)
-
-      #########################################################################
-      # QUANTORS
-      #########################################################################
-
-      # universal quantification -> fresh variable (can be repeated!)
-      universal_quantification(body) ->
-        Logger.notice("applying \"Π\"")
-        count = Map.get(inst_count, formula, 0)
-
-        if count < parameters.max_instantiations do
-          type(args: [type]) = get_term_type(body)
-          new_inst_count = Map.put(inst_count, formula, count + 1)
-          fresh_variable = mk_term(mk_uniqe_var(type))
-          fresh_instance = mk_appl_term(body, fresh_variable)
-
-          tableau(
-            [fresh_instance | rest] ++ [formula],
-            definitions,
-            parameters,
-            tableau_state(state, inst_count: new_inst_count)
-          )
-        else
-          # skip the universal quantification - upper bound of instantiations reached
-          Logger.info("instantiation limit exceeded")
-          tableau(rest, definitions, parameters, tableau_state(state, incomplete?: true))
-        end
-
-      # negated universal quantification -> skolemization
-      negated(universal_quantification(body)) ->
-        Logger.notice("applying \"¬Π\"")
-
-        type(args: [type]) = get_term_type(body)
-
-        tableau(
-          [sem_negate(mk_appl_term(body, mk_new_skolem_term(get_fvars(body), type))) | rest],
-          definitions,
-          parameters,
-          state
-        )
-
-      # existential quantification -> skolemization
-      existential_quantification(body) ->
-        Logger.notice("applying \"Σ\"")
-
-        type(args: [type]) = get_term_type(body)
-
-        tableau(
-          [mk_appl_term(body, mk_new_skolem_term(get_fvars(body), type)) | rest],
-          definitions,
-          parameters,
-          state
-        )
-
-      # negated existential quantification -> fresh variable (can be repeated!)
-      negated(existential_quantification(body)) ->
-        Logger.notice("applying \"¬Σ\"")
-        count = Map.get(inst_count, formula, 0)
-
-        if count < parameters.max_instantiations do
-          type(args: [type]) = get_term_type(body)
-          new_inst_count = Map.put(inst_count, formula, count + 1)
-          fresh_variable = mk_term(mk_uniqe_var(type))
-          fresh_instance = syn_negate(mk_appl_term(body, fresh_variable))
-
-          tableau(
-            [fresh_instance | rest] ++ [formula],
-            definitions,
-            parameters,
-            tableau_state(state, inst_count: new_inst_count)
-          )
-        else
-          # skip the negated existential quantification - upper bound of instantiations reached
-          Logger.info("instantiation limit exceeded")
-          tableau(rest, definitions, parameters, tableau_state(state, incomplete?: true))
-        end
-    end
+    apply_rule(formula, rest, definitions, parameters, state)
   end
+
+  #############################################################################
+  # TAUTOLOGIES
+  #############################################################################
+
+  deftautology("⊤", true_term())
+  deftautology("¬⊥", negated(false_term()))
+  deftautology("=r", equality(a, a))
+
+  #############################################################################
+  # CONTRADICTIONS
+  #############################################################################
+
+  defcontradiction("⊥", false_term())
+  defcontradiction("¬⊤", negated(true_term()))
+  defcontradiction("¬=r", equality(a, a))
+
+  #############################################################################
+  # ALPHA RULES (LINEAR)
+  #############################################################################
+
+  defalpha("¬¬", negated(negated(a)), do: [a])
+  defalpha("∧", conjunction(a, b), do: [a, b])
+  defalpha("¬∨", negated(disjunction(a, b)), do: [negate(a), negate(b)])
+  defalpha("¬⊃", negated(implication(a, b)), do: [a, negate(b)])
+
+  #############################################################################
+  # BETA RULES (BRANCHING)
+  #############################################################################
+
+  defbeta("∨", disjunction(a, b), do: {a, b})
+  defbeta("¬∧", negated(conjunction(a, b)), do: {negate(a), negate(b)})
+  defbeta("⊃", implication(a, b), do: {negate(a), b})
+  defbeta("≡", equivalence(a, b), do: {[a, b], [negate(a), negate(b)]})
+  defbeta("¬≡", negated(equivalence(a, b)), do: {[negate(a), b], [a, negate(b)]})
+
+  #############################################################################
+  # GAMMA RULES (UNIVERSAL)
+  #############################################################################
+
+  defgamma "Π", universal_quantification(body), body do
+    mk_appl_term(body, fresh_term)
+  end
+
+  defgamma "¬Σ", negated(existential_quantification(body)), body do
+    negate(mk_appl_term(body, fresh_term))
+  end
+
+  #############################################################################
+  # DELTA RULES (EXISTENTIAL)
+  #############################################################################
+
+  defdelta "Σ", existential_quantification(body), body do
+    mk_appl_term(body, skolem_term)
+  end
+
+  defdelta "¬Π", negated(universal_quantification(body)), body do
+    negate(mk_appl_term(body, skolem_term))
+  end
+
+  #############################################################################
+  # EQUALITY RULES
+  #############################################################################
+
+  defalpha "=o", typed_equality(a, b, type_o()) do
+    [equivalent_term() |> mk_appl_term(a) |> mk_appl_term(b)]
+  end
+
+  defalpha "¬=o", negated(typed_equality(a, b, type_o())) do
+    eq = equivalent_term() |> mk_appl_term(a) |> mk_appl_term(b)
+    [neg_term() |> mk_appl_term(eq)]
+  end
+
+  defmaybeatomic "=ι", typed_equality(a, b, type(args: []) = t), t, :pos do
+    [mk_leibnitz_equality(a, b)]
+  end
+
+  defmaybeatomic "¬=ι", negated(typed_equality(a, b, type(args: []) = t)), t, :neg do
+    [negate(mk_leibnitz_equality(a, b))]
+  end
+
+  defalpha "=α⇾β", equality(a, b) do
+    [mk_ext_equality(a, b)]
+  end
+
+  defalpha "¬=α⇾β", negated(equality(a, b)) do
+    [negated(mk_ext_equality(a, b))]
+  end
+
+  #############################################################################
+  # DEFINITIONS
+  #############################################################################
+
+  defunfold "definition", hol_term(head: declaration(kind: :co, name: name), args: args) do
+    unfolded
+  end
+
+  defunfold "negated definition",
+            negated(hol_term(head: declaration(kind: :co, name: name), args: args)) do
+    negate(unfolded)
+  end
+
+  #############################################################################
+  # ATOM RULES
+  #############################################################################
+
+  defatomic(negated(_), :neg)
+
+  defatomic(_, :pos)
+
+  #############################################################################
+  # HELPER FUNCTIONS
+  #############################################################################
 
   @spec preprocess(HOL.Data.hol_term(), Parameters.t()) :: HOL.Data.hol_term()
   defp preprocess(formula, parameters) do
@@ -497,7 +293,7 @@ defmodule THOU.Tableaux do
 
     unif_set =
       case polarity do
-        :pos -> sem_negate(clause)
+        :pos -> lit_negate(clause)
         :neg -> clause
       end
 
