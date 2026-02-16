@@ -30,7 +30,7 @@ defmodule THOU.MixProject do
   defp deps do
     [
       {:hol, "~> 1.0.2"},
-      {:behold, "~> 1.1.0"},
+      {:behold, "~> 1.1.2"},
       {:nimble_parsec, "~> 1.4.2"},
       {:rustler, "~> 0.37.1", runtime: false},
       # Code analyzer, code duplication checker and security analyzer

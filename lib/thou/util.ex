@@ -7,7 +7,8 @@ defmodule THOU.Util do
   import HOL.Data
   import HOL.Terms
   import HOL.Substitution
-  import BeHOLd.ClassicalHOL.Definitions
+  use BeHOLd.ClassicalHOL.Definitions
+  import BeHOLd.ClassicalHOL.Equality
 
   @typedoc """
   Type for a term or a collection of terms.
@@ -40,37 +41,17 @@ defmodule THOU.Util do
   Generates a term stating that `a` and `b` are Leibniz equal. Note that
   Leibniz equality is stated in terms of equivalence.
   """
-  @spec mk_leibnitz_equality(HOL.Data.hol_term(), HOL.Data.hol_term()) :: HOL.Data.hol_term()
-  def mk_leibnitz_equality(hol_term(type: t) = a, hol_term(type: t) = b) do
-    p_var = mk_uniqe_var(mk_type(:o, [t]))
-    p_term = mk_term(p_var)
-
-    lhs = mk_appl_term(p_term, a)
-    rhs = mk_appl_term(p_term, b)
-    inner_equiv = equivalent_term() |> mk_appl_term(lhs) |> mk_appl_term(rhs)
-
-    pi_term(mk_type(:o, [t])) |> mk_appl_term(mk_abstr_term(inner_equiv, p_var))
+  @spec mk_leibniz_equal(HOL.Data.hol_term(), HOL.Data.hol_term()) :: HOL.Data.hol_term()
+  def mk_leibniz_equal(hol_term(type: t) = a, hol_term(type: t) = b) do
+    leibniz_equality(t, equivalent_term()) |> mk_appl_term(a) |> mk_appl_term(b)
   end
 
   @doc """
   Generates a term stating that `a` and `b` are equal in their extensions.
   """
-  @spec mk_ext_equality(HOL.Data.hol_term(), HOL.Data.hol_term()) :: HOL.Data.hol_term()
-  def mk_ext_equality(
-        hol_term(type: type(goal: g, args: [at | ats])) = a,
-        hol_term(type: type(goal: g, args: [at | ats])) = b
-      ) do
-    goal_type = mk_type(g, ats)
-
-    x = mk_uniqe_var(at)
-    x_term = mk_term(x)
-
-    a_x = mk_appl_term(a, x_term)
-    b_x = mk_appl_term(b, x_term)
-
-    inner_eq = equals_term(goal_type) |> mk_appl_term(a_x) |> mk_appl_term(b_x)
-
-    pi_term(at) |> mk_appl_term(mk_abstr_term(inner_eq, x))
+  @spec mk_ext_equal(HOL.Data.hol_term(), HOL.Data.hol_term()) :: HOL.Data.hol_term()
+  def mk_ext_equal(hol_term(type: t) = a, hol_term(type: t) = b) do
+    extensional_equality(t) |> mk_appl_term(a) |> mk_appl_term(b)
   end
 
   @doc """

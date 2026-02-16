@@ -224,19 +224,19 @@ defmodule THOU.Tableaux do
   end
 
   defmaybeatomic "=ι", typed_equality(a, b, type(args: []) = t), t, :pos do
-    [mk_leibnitz_equality(a, b)]
+    [mk_leibniz_equal(a, b)]
   end
 
   defmaybeatomic "¬=ι", negated(typed_equality(a, b, type(args: []) = t)), t, :neg do
-    [negate(mk_leibnitz_equality(a, b))]
+    [negate(mk_leibniz_equal(a, b))]
   end
 
   defalpha "=α⇾β", equality(a, b) do
-    [mk_ext_equality(a, b)]
+    [mk_ext_equal(a, b)]
   end
 
   defalpha "¬=α⇾β", negated(equality(a, b)) do
-    [negated(mk_ext_equality(a, b))]
+    [negated(mk_ext_equal(a, b))]
   end
 
   #############################################################################
