@@ -1,152 +1,118 @@
 # SHOT-25
 
-**SHOT-25** (simply-typed higher-order tableaux) is a tableau prover for
-simply-typed higher-order logic (HOL) that relies on higher-order
-pre-unification for branch closure.
+**SHOT-25** (simply-typed higher-order tableaux) is an automated theorem prover
+for simply-typed higher-order logic (HOL). It is an implementation of a
+higher-order tableaux prover that utilizes **higher-order pre-unification** for
+branch closure.
 
-Tightly integrates with the Elixir libraries
-[**HOL**](https://hexdocs.pm/hol/readme.html), which defines data structures
-and handles term construction and pre-unification for the simply-typed lambda
-calculus, and [**BeHOLd**](https://hexdocs.pm/behold/readme.html), which
-extends this library by logical connectives, facilitates pattern matching and
-comes with a parser for TPTP syntax.
+By finding diagonal arguments through unification, SHOT-25 enables shallow
+proof trees for classic benchmarks like Cantor's theorem.
+
+## Key Features
+
+- **Logic Framework**: Built on the simply-typed lambda calculus using
+  **de Bruijn indices** to ensure unique representation and avoid variable
+  capture.
+- **Proof Procedure**: Employs a semantic tableau search where rules are
+  exhaustively applied to a negated proof goal.
+- **Unification**: Uses a semi-decision procedure for higher-order
+  pre-unification similar to Huet's algorithm.
+- **Parallelism**: Processes unification solutions and branching in parallel,
+  utilizing all available schedulers on the Erlang VM.
+- **E-Graph Integration**: Uses the Rust library `egg` (via Rustler) to orient
+  commutative connectives and simplify formulas at the propositional level.
+
+---
+
+## Technical Integration
+
+SHOT-25 tightly integrates with the following Elixir ecosystem tools:
+
+- [**HOL**](https://hexdocs.pm/hol/readme.html): Handles data structures, term
+  construction, and the core unification algorithm.
+- [**BeHOLd**](https://hexdocs.pm/behold/readme.html): Provides definitions of
+  logical symbols, a parser for **TPTP TH0** syntax, complete type inference, and
+  file parsing for the TPTP library.
+
+---
 
 ## Tableau Rules
 
-Generally, to prove a formula $\varphi$, the prover needs to show that
-$\neg \varphi$ is unsatisfiable. In terms of semantic tableaux, a formula is
-unsatisfiable if all branches close after exhaustive application of the defined
-tableau rules. Conversely, if branches remain open, i.e., when no more rules
-can be applied, the formula is countersatisfiable.
+The prover aims to show that a set of formulas is unsatisfiable by closing all
+branches. It utilizes the following rule sets:
 
-The prover works with the signature symbols defined in the
-[**BeHOLd** package](https://hexdocs.pm/behold/readme.html). It uses the
-following rules, where $\star$ refers to branch closure, $\mathbf X_\alpha$ to
-a fresh variable of type $\alpha$, $\mathbf{sk}_{\bar t \to \alpha}$ to a fresh
-Skolem constant mapping the list of types $\bar t$ to type $\alpha$,
-$\operatorname{FV}(\varphi)^i_\alpha$ to the $i$-th free variable in formula
-$\varphi$ which is of type $\alpha$ and $\iota$ to a known atomic type other
-than $o$.
+### Core Rules
 
-_Atoms:_
+- **Propositional**: $\alpha$-rules (conjunctive), $\beta$-rules (disjunctive),
+  and double-negation elimination.
+- **Quantifiers**: $\gamma$-rules (universal) which introduce fresh variables,
+  and $\delta$-rules (existential) which introduce Skolem constants.
+- **Equality**: Supports Boolean equality ($\equiv$), Leibniz equality for base
+  types, and functional extensionality for function types.
+- **Optimization**: Includes reflexivity ($s=s$) and irreflexivity
+  ($\neg(s=s)$) checks on a syntactic level to discard redundant literals or
+  close branches early.
 
-$$
-\displaystyle\frac{\top}{}\top
-\qquad
-\displaystyle\frac{\bot}{\star}\bot
-\qquad
-\displaystyle\frac{\neg\top}{\star}\neg\top
-\qquad
-\displaystyle\frac{\neg\bot}{}\neg\bot
-\qquad
-\displaystyle\frac{\dots,A_o,\dots,B_o}{\star~(\text{if } \sigma(\neg A) = \sigma(B))}\text{Atom}
-$$
+### Branch Closure
 
-_Equality:_
+A branch closes via **Atom Unification** when an atom $A$ can be unified with
+the negation of an existing literal $B$ in the clause.
 
-$$
-\displaystyle\frac{s_o = t_o}{s_o \equiv t_o}=_o
-\qquad
-\displaystyle\frac{s_\iota = t_\iota}{\Pi(\lambda P. P s \equiv P t)}=_\iota
-\qquad
-\displaystyle\frac{s_{\alpha\to\beta} = t_{\alpha\to\beta}}{\Pi(\lambda x_\alpha. s x = t x)}=_{\alpha\to\beta}
-$$
+---
 
-$$
-\displaystyle\frac{\neg (s_o = t_o)}{\neg (s_o \equiv t_o)}\neg=_o
-\qquad
-\displaystyle\frac{\neg (s_\iota = t_\iota)}{\neg (\Pi(\lambda P. P s \equiv P t))}\neg=_\iota
-\qquad
-\displaystyle\frac{\neg(s_{\alpha\to\beta} = t_{\alpha\to\beta})}{\neg(\Pi(\lambda x_\alpha. s x = t x))}\neg=_{\alpha\to\beta}
-$$
+## Usage Example
 
-_Reflexivity of Equality:_
+You can run the prover within an Elixir environment by passing a formula, a
+list of assumptions, definitions and a keyword list of parameters:
 
-$$
-\displaystyle\frac{s_\alpha = s_\alpha}{}=^r
-\qquad
-\displaystyle\frac{\neg (s_\alpha = s_\alpha)}{\star}\neg=^r
-$$
+```elixir
+# Define a goal formula (e.g., via the BeHOLd parser)
+formula = BeHOLd.Parser.parse("![X: $i]: (p @ X) => ?[X: $i]: (p @ X)")
 
-_Logical Connectives and their Negation:_
+# Define proving parameters
+params = [
+  timeout: 30_000,            # 30 seconds
+  rewrite: :simplify,         # Use e-graphs for propositional simplification
+  branch_heuristic: :ncpo,    # Prioritize branches using NCPO
+  max_instantiations: 4,      # Limit gamma-rule applications
+  unification_depth: 8,       # Unification algorithm search depth
+  max_concurrency: 16         # Max parallel workers
+]
 
-$$
-\displaystyle\frac{\neg\neg t}{t}\neg\neg
-\qquad
-\displaystyle\frac{s \lor t}{s \mid t}\lor
-\qquad
-\displaystyle\frac{s \land t}{s, t}\land
-\qquad
-\displaystyle\frac{s \supset t}{\neg s \mid t}\supset
-\qquad
-\displaystyle\frac{s \equiv t}{s, t \mid \neg s, \neg t}\equiv
-$$
+assms = []                    # A list of formulas, treated as assumptions
+defs = %{}                    # A map of symbol names and equations
 
-$$
-\displaystyle\frac{\neg(s \lor t)}{\neg s, \neg t}\neg\lor
-\qquad
-\displaystyle\frac{\neg(s \land t)}{\neg s \mid \neg t}\neg\land
-\qquad
-\displaystyle\frac{\neg(s \supset t)}{s, \neg t}\neg\supset
-\qquad
-\displaystyle\frac{\neg(s \equiv t)}{\neg s, t \mid s, \neg t}\neg\equiv
-$$
+# Execute the tableau procedure
+case SHOT25.Prover.prove(formula, assms, defs, params) do
+  {:valid, :proven} -> IO.puts("Theorem proven!")
+  {:countersat, _countermodel} -> IO.puts("Formula is false.")
+  {:unknown, _partial, reason} -> IO.puts("Search exhausted: #{reason}")
+end
+```
 
-_Quantors and their Negation (rules $\Pi$ and $\neg\Sigma$ can be repeated infinitely many times):_
+---
 
-$$
-\displaystyle\frac{\Pi P_{\alpha\to o}}{P \mathbf{X}_\alpha}\Pi
-\qquad
-\displaystyle\frac{\Sigma P_{\alpha\to o}}{P (\mathbf{sk}_{\bar t\to\alpha}(\operatorname{FV}(P)^1_{t_1}, \dots, \operatorname{FV}(P)^n_{t_n})_\alpha)}\Sigma
-$$
+## Parameters & Heuristics
 
-$$
-\displaystyle\frac{\neg(\Sigma P_{\alpha\to o})}{\neg (P \mathbf{X}_\alpha)}\neg\Sigma
-\qquad
-\displaystyle\frac{\neg(\Pi P_{\alpha\to o})}{\neg(P (\mathbf{sk}_{\bar t\to\alpha}(\operatorname{FV}(P)^1_{t_1}, \dots, \operatorname{FV}(P)^n_{t_n})_\alpha))}\neg\Pi
-$$
+| Parameter             | Description                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| `:timeout`            | Global timeout in milliseconds (default: 30s)                                                    |
+| `:rewrite`            | Preprocessing via e-graphs: `:orient` or `:simplify`                                             |
+| `:branch_heuristic`   | Uses [**NCPO**](https://arxiv.org/abs/2505.20121) to prioritize branches likely to close earlier |
+| `:max_instantiations` | Limits how many times $\gamma$-rules can be applied.                                             |
+| `:unification_depth`  | Limits the depth of the pre-unification search to ensure termination.                            |
+| `:max_concurrency`    | Bounds the number of parallel schedulers for checking unification solutions.                     |
 
-## Parameters
+---
 
-The following parameters can be specified to adapt the prover for the desired
-problem:
+## Limitations of SHOT-25
 
-- `:timeout`: timeout in milliseconds, defaults to 30s
-- `:rewrite`: what method to use for rewriting the formula before processing
-    - `:orient`: default, just orient the disjunctions and conjunctions in the
-      formula based on e-graphs
-    - `:simplify`: additionally simplify the formula on propositional level
-    - `nil`: don't rewrite the formula
-- `:branch_heuristic`: which heuristic to employ when ordering branches
-    - `:ncpo`: default, use [NCPO](https://arxiv.org/abs/2505.20121),
-      originally a termination order for higher-order rewriting systems on
-      $\beta\eta$-normal terms
-    - `nil`: don't order branches and process them as they occur
-- `:max_instantiations`: how many times the $\Pi$ and $\neg\Sigma$ rules can be
-  instantiated on the same formula, defaults to 4
-- `:unification_depth`: parameter for the
-  [unification algorithm](https://hexdocs.pm/hol/HOL.Unification.html) that
-  limits the depth up to which solutions should be searched for the given
-  unification problem, defaults to 8
-- `:max_concurrency`: upper bound for the amount of schedulers to use when
-  checking unification solutions in parallel, defaults to all available
-  schedulers
+While `egg` handles extensionality modulo propositional rewriting, complex
+cases such as proving $p(a \land b) \supset p(a) \land p(b)$ currently fail.
+Improvements planned for the prover involve adapting subformula renaming in
+preprocessing and the adaption of extensionality rules from other calculi,
+e.g. instantiations in finite domains such as for type $o$, $o\to o$ etc.
 
-Note that when `:timeout` and `:max_instantiations` have finite values, the
-prover is inherently incomplete.
-
-## Limitations
-
-While some simple cases of extensionality are handled by formula rewriting via
-e-graphs, this does not extend to more complex extensionality problems. E.g.,
-the formula $p(a) \land p(b) \supset p(a \land b)$ is not provable by
-**SHOT-25**. A promising approach to solving this could be the adaption of
-[subformula renaming](https://doi.org/10.1007/978-3-642-38574-2_7) to classical
-HOL and employ it in preprocessing. Instantiation for finite domains is another
-direction which can solve extensionality by rephrasing the problem as a
-SMT-problem eliminating quantifiers for finite domains.
-
-HOL is undecidable. There might however still be instances where branches that
-will remain open can be detected regardless. Such a method is not implemented,
-though, which leads to non-termination in countersatisfiable cases whenever
-universal or negated existential quantifiers occur on the branches.
+The undecidability of HOL additionally yields the challenge of non-termination
+whenever a countersatisfiable formula is processed and the tableau involves
+$\gamma$-rule instantiations.
