@@ -83,7 +83,7 @@ assms = []                    # A list of formulas, treated as assumptions
 defs = %{}                    # A map of symbol names and equations
 
 # Execute the tableau procedure
-case SHOT25.Prover.prove(formula, assms, defs, params) do
+case SHOT25.prove(formula, assms, defs, params) do
   {:valid, :proven} -> IO.puts("Theorem proven!")
   {:countersat, _countermodel} -> IO.puts("Formula is false.")
   {:unknown, _partial, reason} -> IO.puts("Search exhausted: #{reason}")
