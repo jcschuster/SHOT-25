@@ -1,9 +1,9 @@
-defmodule THOU.Preprocessing.SerializationTest do
+defmodule SHOT25.Preprocessing.SerializationTest do
   use ExUnit.Case
 
   import HOL.{Data, Terms}
   import BeHOLd.ClassicalHOL.Definitions
-  alias THOU.Preprocessing.Serialization
+  alias SHOT25.Preprocessing.Serialization
 
   describe "to_s_expr/1 - Term to S-Expression" do
     test "serializes a simple constant" do

@@ -1,6 +1,6 @@
-# THOU
+# SHOT-25
 
-**THOU** (tableaux with higher-order unification) is a tableau prover for
+**SHOT-25** (simply-typed higher-order tableaux) is a tableau prover for
 simply-typed higher-order logic (HOL) that relies on higher-order
 pre-unification for branch closure.
 
@@ -111,26 +111,26 @@ $$
 The following parameters can be specified to adapt the prover for the desired
 problem:
 
--   `:timeout`: timeout in milliseconds, defaults to 30s
--   `:rewrite`: what method to use for rewriting the formula before processing
-    -   `:orient`: default, just orient the disjunctions and conjunctions in the
-        formula based on e-graphs
-    -   `:simplify`: additionally simplify the formula on propositional level
-    -   `nil`: don't rewrite the formula
--   `:branch_heuristic`: which heuristic to employ when ordering branches
-    -   `:ncpo`: default, use [NCPO](https://arxiv.org/abs/2505.20121),
-        originally a termination order for higher-order rewriting systems on
-        $\beta\eta$-normal terms
-    -   `nil`: don't order branches and process them as they occur
--   `:max_instantiations`: how many times the $\Pi$ and $\neg\Sigma$ rules can be
-    instantiated on the same formula, defaults to 4
--   `:unification_depth`: parameter for the
-    [unification algorithm](https://hexdocs.pm/hol/HOL.Unification.html) that
-    limits the depth up to which solutions should be searched for the given
-    unification problem, defaults to 8
--   `:max_concurrency`: upper bound for the amount of schedulers to use when
-    checking unification solutions in parallel, defaults to all available
-    schedulers
+- `:timeout`: timeout in milliseconds, defaults to 30s
+- `:rewrite`: what method to use for rewriting the formula before processing
+    - `:orient`: default, just orient the disjunctions and conjunctions in the
+      formula based on e-graphs
+    - `:simplify`: additionally simplify the formula on propositional level
+    - `nil`: don't rewrite the formula
+- `:branch_heuristic`: which heuristic to employ when ordering branches
+    - `:ncpo`: default, use [NCPO](https://arxiv.org/abs/2505.20121),
+      originally a termination order for higher-order rewriting systems on
+      $\beta\eta$-normal terms
+    - `nil`: don't order branches and process them as they occur
+- `:max_instantiations`: how many times the $\Pi$ and $\neg\Sigma$ rules can be
+  instantiated on the same formula, defaults to 4
+- `:unification_depth`: parameter for the
+  [unification algorithm](https://hexdocs.pm/hol/HOL.Unification.html) that
+  limits the depth up to which solutions should be searched for the given
+  unification problem, defaults to 8
+- `:max_concurrency`: upper bound for the amount of schedulers to use when
+  checking unification solutions in parallel, defaults to all available
+  schedulers
 
 Note that when `:timeout` and `:max_instantiations` have finite values, the
 prover is inherently incomplete.
@@ -139,11 +139,12 @@ prover is inherently incomplete.
 
 While some simple cases of extensionality are handled by formula rewriting via
 e-graphs, this does not extend to more complex extensionality problems. E.g.,
-the formula $p(a) \land p(b) \supset p(a \land b)$ is not provable by **THOU**.
-A promising approach to solving this could be the adaption of
+the formula $p(a) \land p(b) \supset p(a \land b)$ is not provable by
+**SHOT-25**. A promising approach to solving this could be the adaption of
 [subformula renaming](https://doi.org/10.1007/978-3-642-38574-2_7) to classical
-HOL and implement a simplifier which can relate solved subformulas to their
-renamed equivalent and propagate computed values.
+HOL and employ it in preprocessing. Instantiation for finite domains is another
+direction which can solve extensionality by rephrasing the problem as a
+SMT-problem eliminating quantifiers for finite domains.
 
 HOL is undecidable. There might however still be instances where branches that
 will remain open can be detected regardless. Such a method is not implemented,

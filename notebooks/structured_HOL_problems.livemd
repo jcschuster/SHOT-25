@@ -5,7 +5,7 @@ System.put_env("HEX_HTTP_CONCURRENCY", "1")
 System.put_env("HEX_HTTP_TIMEOUT", "120")
 
 Mix.install([
-  {:thou, path: Path.join(__DIR__, "..")},
+  {:shot25, path: Path.join(__DIR__, "..")},
   {:behold, "~> 1.1.0"},
   {:kino, "~> 0.17.0"}
 ])
@@ -15,11 +15,11 @@ Mix.install([
 
 ```elixir
 import HOL.Data
-import THOU.Prover
+import SHOT25.Prover
 import BeHOLd.Parser
 import BeHOLd.TPTP
-import THOU.Runner
-import THOU.PrettyPrint
+import SHOT25.Runner
+import SHOT25.PrettyPrint
 alias BeHOLd.Data.Context
 
 Logger.configure(level: :error)

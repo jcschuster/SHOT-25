@@ -1,19 +1,19 @@
-defmodule THOU.MixProject do
+defmodule SHOT25.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/jcschuster/THOU"
+  @source_url "https://github.com/jcschuster/SHOT-25"
 
   def project do
     [
-      app: :thou,
+      app: :shot25,
       version: @version,
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       source_url: @source_url,
       description:
-        "THOU (tableaux with higher-order unification) is a tableaux prover for simply-typed higher-order logic relying on higher-order pre-unification for branch closure.",
+        "SHOT-25 (simply-typed higher-order tableaux) is a tableaux prover for simply-typed higher-order logic relying on higher-order pre-unification for branch closure.",
       docs: docs(),
       package: package()
     ]
