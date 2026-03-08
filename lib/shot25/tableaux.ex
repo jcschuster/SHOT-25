@@ -190,11 +190,11 @@ defmodule SHOT25.Tableaux do
   # GAMMA RULES (UNIVERSAL)
   #############################################################################
 
-  defgamma "Π", universal_quantification(body), body do
+  defgamma "Π", universal_quantification(body), body, fresh_term do
     mk_appl_term(body, fresh_term)
   end
 
-  defgamma "¬Σ", negated(existential_quantification(body)), body do
+  defgamma "¬Σ", negated(existential_quantification(body)), body, fresh_term do
     negate(mk_appl_term(body, fresh_term))
   end
 
@@ -202,11 +202,11 @@ defmodule SHOT25.Tableaux do
   # DELTA RULES (EXISTENTIAL)
   #############################################################################
 
-  defdelta "Σ", existential_quantification(body), body do
+  defdelta "Σ", existential_quantification(body), body, skolem_term do
     mk_appl_term(body, skolem_term)
   end
 
-  defdelta "¬Π", negated(universal_quantification(body)), body do
+  defdelta "¬Π", negated(universal_quantification(body)), body, skolem_term do
     negate(mk_appl_term(body, skolem_term))
   end
 
@@ -243,12 +243,15 @@ defmodule SHOT25.Tableaux do
   # DEFINITIONS
   #############################################################################
 
-  defunfold "definition", hol_term(head: declaration(kind: :co, name: name), args: args) do
+  defunfold "definition",
+            hol_term(head: declaration(kind: :co, name: name), args: args),
+            unfolded do
     unfolded
   end
 
   defunfold "negated definition",
-            negated(hol_term(head: declaration(kind: :co, name: name), args: args)) do
+            negated(hol_term(head: declaration(kind: :co, name: name), args: args)),
+            unfolded do
     negate(unfolded)
   end
 
