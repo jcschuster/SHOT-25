@@ -23,4 +23,4 @@ shot25-*.tar
 /tmp/
 
 # Rust binary artifacts
-/target/
+native/shot25/target/
